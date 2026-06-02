@@ -234,11 +234,17 @@ export default function DietScreen() {
             <div className="search-bar">
               <span className="search-bar__icon">🔍</span>
               <input
-                type="text"
+                type="search"
+                name="food-search-query"
+                id="food-search-query"
                 placeholder="Search foods... (e.g., Idli, Biryani, Rice)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck="false"
               />
             </div>
             <div style={{ maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' }}>
