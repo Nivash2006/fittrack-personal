@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { db } from '../db/database';
+import { syncEngine } from '../db/syncEngine';
 import {
   calculateBMR,
   calculateTDEE,
@@ -49,7 +49,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
   const macros = calculateMacros(targetCalories, goal);
 
   const handleFinish = async () => {
-    await db.userProfiles.add({
+    await syncEngine.saveProfile({
       name: name || 'User',
       email: '',
       heightCm,

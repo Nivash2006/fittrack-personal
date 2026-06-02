@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
+import { syncEngine } from '../db/syncEngine';
 import { searchFoods, calculateNutrition, type FoodItem } from '../db/foodDatabase';
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
@@ -67,7 +68,7 @@ export default function DietScreen() {
     const grams = parseFloat(servingG) || selectedFood.defaultServingG;
     const nutrition = calculateNutrition(selectedFood, grams);
 
-    await db.meals.add({
+    await syncEngine.saveMeal({
       foodName: selectedFood.name,
       mealType: activeMealType,
       quantity: grams,
@@ -90,7 +91,7 @@ export default function DietScreen() {
     if (!customName.trim()) return;
     const qty = parseFloat(customQuantity) || 100;
 
-    await db.meals.add({
+    await syncEngine.saveMeal({
       foodName: customName.trim(),
       mealType: activeMealType,
       quantity: qty,
@@ -113,7 +114,7 @@ export default function DietScreen() {
   }, [customName, customCalories, customProtein, customCarbs, customFats, customQuantity, activeMealType, today]);
 
   const handleDeleteMeal = useCallback(async (id: number) => {
-    await db.meals.delete(id);
+    await syncEngine.deleteMeal(id);
     setToast('Meal removed');
   }, []);
 
