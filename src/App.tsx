@@ -13,6 +13,7 @@ import ProfileScreen from './screens/ProfileScreen';
 import DeficitScreen from './screens/DeficitScreen';
 import NotesScreen from './screens/NotesScreen';
 import BottomNav from './components/BottomNav';
+import Header from './components/Header';
 
 function App() {
   const [loading, setLoading] = useState(true);
@@ -89,6 +90,7 @@ function App() {
   return (
     <BrowserRouter>
       <div className="app-layout">
+        <Header onReset={handleSignOut} />
         <div className="app-content">
           <Routes>
             <Route path="/" element={<DashboardScreen />} />

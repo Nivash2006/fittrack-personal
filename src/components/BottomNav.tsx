@@ -1,5 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
+import { useKeyboardActive } from '../hooks/useKeyboardActive';
 
+// Consolidated Nav Items (Exactly Four Content Sections for Touch Spaciousness)
 const navItems = [
   {
     path: '/',
@@ -48,40 +50,17 @@ const navItems = [
       </svg>
     ),
   },
-  {
-    path: '/deficit',
-    label: 'Deficit',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M23 18l-8.5-8.5-5 5L1 6" />
-        <polyline points="17 18 23 18 23 12" />
-      </svg>
-    ),
-  },
-  {
-    path: '/notes',
-    label: 'Notes',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      </svg>
-    ),
-  },
-  {
-    path: '/profile',
-    label: 'Profile',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </svg>
-    ),
-  },
 ];
 
 export default function BottomNav() {
   const location = useLocation();
+  const isKeyboardActive = useKeyboardActive();
+
+  // If the mobile on-screen keyboard is active, hide the bottom nav completely
+  // to avoid squishing contents and blocking buttons!
+  if (isKeyboardActive) {
+    return null;
+  }
 
   return (
     <nav className="bottom-nav">
@@ -90,9 +69,10 @@ export default function BottomNav() {
           key={item.path}
           to={item.path}
           className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
+          style={{ flex: 1, height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '3px' }}
         >
           {item.icon}
-          <span>{item.label}</span>
+          <span style={{ fontSize: '0.6875rem' }}>{item.label}</span>
         </NavLink>
       ))}
     </nav>
