@@ -20,16 +20,26 @@ export default function LoginScreen({ onSuccess }: LoginScreenProps) {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
-    setIsLoading(true);
 
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
 
     if (!cleanEmail || !cleanPassword) {
       setErrorMsg('Please enter both email and password.');
-      setIsLoading(false);
       return;
     }
+
+    if (activeTab === 'signup' && !name.trim()) {
+      setErrorMsg('Please enter your name.');
+      return;
+    }
+
+    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+      setErrorMsg('Database configuration missing. Please verify VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are configured in your Vercel project settings.');
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       if (activeTab === 'login') {
@@ -41,12 +51,6 @@ export default function LoginScreen({ onSuccess }: LoginScreenProps) {
         if (error) throw error;
         onSuccess();
       } else {
-        if (!name.trim()) {
-          setErrorMsg('Please enter your name.');
-          setIsLoading(false);
-          return;
-        }
-
         const { error, data } = await supabase.auth.signUp({
           email: cleanEmail,
           password: cleanPassword,
@@ -78,6 +82,13 @@ export default function LoginScreen({ onSuccess }: LoginScreenProps) {
 
   const handleGoogleLogin = async () => {
     setErrorMsg('');
+    setSuccessMsg('');
+    
+    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+      setErrorMsg('Database configuration missing. Google login is unavailable.');
+      return;
+    }
+
     setIsLoading(true);
     try {
       const { error } = await supabase.auth.signInWithOAuth({
