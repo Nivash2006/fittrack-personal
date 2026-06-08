@@ -27,6 +27,7 @@ export default function DietScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [showOcrModal, setShowOcrModal] = useState(false);
+  const [ocrMode, setOcrMode] = useState<'label' | 'meal'>('label');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFood, setSelectedFood] = useState<FoodItem | null>(null);
   const [servingG, setServingG] = useState('');
@@ -216,14 +217,17 @@ export default function DietScreen() {
 
       {/* Add Buttons */}
       <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
-        <button className="btn btn-primary flex-1" onClick={() => setShowAddModal(true)} style={{ minWidth: '110px' }}>
+        <button className="btn btn-primary flex-1" onClick={() => setShowAddModal(true)} style={{ minWidth: '100px' }}>
           🔍 Search
         </button>
-        <button className="btn btn-secondary flex-1" onClick={() => setShowCustomModal(true)} style={{ minWidth: '110px' }}>
+        <button className="btn btn-secondary flex-1" onClick={() => setShowCustomModal(true)} style={{ minWidth: '100px' }}>
           ✏️ Custom
         </button>
-        <button className="btn btn-secondary flex-1" onClick={() => setShowOcrModal(true)} style={{ minWidth: '110px', background: 'rgba(77, 141, 255, 0.1)', color: '#4d8dff', border: '1px solid rgba(77, 141, 255, 0.2)' }}>
+        <button className="btn btn-secondary flex-1" onClick={() => { setOcrMode('label'); setShowOcrModal(true); }} style={{ minWidth: '100px', background: 'rgba(77, 141, 255, 0.1)', color: '#4d8dff', border: '1px solid rgba(77, 141, 255, 0.2)' }}>
           📸 Scan Label
+        </button>
+        <button className="btn btn-secondary flex-1" onClick={() => { setOcrMode('meal'); setShowOcrModal(true); }} style={{ minWidth: '100px', background: 'rgba(0, 230, 138, 0.1)', color: 'var(--accent)', border: '1px solid rgba(0, 230, 138, 0.2)' }}>
+          📸 Scan Meal
         </button>
       </div>
 
@@ -381,7 +385,12 @@ export default function DietScreen() {
           <OCRScanner
             isOpen={showOcrModal}
             onClose={() => setShowOcrModal(false)}
+            mode={ocrMode}
             onScanComplete={handleOcrComplete}
+            onMealSelected={(food) => {
+              handleSelectFood(food);
+              setShowAddModal(true);
+            }}
           />
         )}
       </Suspense>

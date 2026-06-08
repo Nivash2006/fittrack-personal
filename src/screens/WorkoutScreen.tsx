@@ -1,15 +1,27 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
 import { EXERCISE_DATABASE, searchExercises, getExercisesByCategory, EXERCISE_CATEGORIES, type Exercise } from '../db/exercises';
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import { getTodayStr, formatDateShort } from '../utils/helpers';
+import { 
+  getExerciseSessions, 
+  isNewPersonalRecord, 
+  assessFatigue, 
+  getOverloadSuggestion, 
+  WORKOUT_TEMPLATES 
+} from '../utils/workoutCoach';
+import RestTimer from '../components/RestTimer';
 
 export default function WorkoutScreen() {
   const today = getTodayStr();
   const todayWorkouts = useLiveQuery(() => db.workouts.where('date').equals(today).toArray(), [today]);
   const recentWorkouts = useLiveQuery(() => db.workouts.toCollection().reverse().limit(30).toArray());
+  const allWorkouts = useLiveQuery(() => db.workouts.toArray());
+  const todaySleep = useLiveQuery(() => db.sleepLogs.where('date').equals(today).first(), [today]);
+  const todayMeals = useLiveQuery(() => db.meals.where('date').equals(today).toArray(), [today]);
+  const profile = useLiveQuery(() => db.userProfiles.toCollection().first());
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,7 +29,51 @@ export default function WorkoutScreen() {
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
   const [sets, setSets] = useState<Array<{ reps: number; weight: number }>>([]);
   const [toast, setToast] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'today' | 'history'>('today');
+  const [viewMode, setViewMode] = useState<'today' | 'history' | 'templates'>('today');
+
+  // V2 workout coach states
+  const [showRestTimer, setShowRestTimer] = useState(false);
+  const [restTimerSeconds, setRestTimerSeconds] = useState(90);
+  const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
+  const [activeTemplate, setActiveTemplate] = useState<{ name: string; exercises: string[] } | null>(() => {
+    const raw = localStorage.getItem('fittrack_active_template');
+    return raw ? JSON.parse(raw) : null;
+  });
+
+  const saveActiveTemplate = (tpl: any) => {
+    setActiveTemplate(tpl);
+    if (tpl) {
+      localStorage.setItem('fittrack_active_template', JSON.stringify(tpl));
+    } else {
+      localStorage.removeItem('fittrack_active_template');
+    }
+  };
+
+  const fatigue = useMemo(() => {
+    if (!profile) return { level: 'low' as const };
+    return assessFatigue(todaySleep, todayMeals ?? [], profile);
+  }, [todaySleep, todayMeals, profile]);
+
+  const suggestion = useMemo(() => {
+    if (!selectedExercise || !allWorkouts) return null;
+    return getOverloadSuggestion(selectedExercise.name, allWorkouts, fatigue.level);
+  }, [selectedExercise, allWorkouts, fatigue]);
+
+  const prevSessions = useMemo(() => {
+    if (!selectedExercise || !allWorkouts) return [];
+    return getExerciseSessions(selectedExercise.name, allWorkouts);
+  }, [selectedExercise, allWorkouts]);
+  const lastSession = prevSessions[0] || null;
+
+  const handleApplyOverload = () => {
+    if (!suggestion || !selectedExercise) return;
+    const updated = Array.from({ length: selectedExercise.defaultSets }, () => ({
+      reps: suggestion.suggestedReps,
+      weight: suggestion.suggestedWeight,
+    }));
+    setSets(updated);
+    setToast('Applied progressive overload targets!');
+  };
 
   const filteredExercises = searchQuery.length >= 2
     ? searchExercises(searchQuery)
@@ -50,6 +106,10 @@ export default function WorkoutScreen() {
 
   const handleSaveWorkout = useCallback(async () => {
     if (!selectedExercise) return;
+
+    // Check for new Personal Record before adding this workout
+    const isPR = isNewPersonalRecord(selectedExercise.name, sets, allWorkouts ?? []);
+
     await db.workouts.add({
       exercise: selectedExercise.name,
       category: selectedExercise.category,
@@ -57,12 +117,36 @@ export default function WorkoutScreen() {
       date: today,
       createdAt: new Date().toISOString(),
     });
-    setToast(`${selectedExercise.name} logged!`);
+
+    if (isPR) {
+      const maxWeight = Math.max(...sets.map((s) => s.weight));
+      const maxReps = sets.reduce((m, s) => s.weight === maxWeight ? Math.max(m, s.reps) : m, 0);
+      const best1RM = Math.max(0, ...sets.map((s) => s.weight * (1 + s.reps / 30)));
+      
+      await db.personalRecords.add({
+        exercise: selectedExercise.name,
+        maxWeight,
+        maxReps,
+        estimated1RM: Math.round(best1RM * 10) / 10,
+        date: today,
+        createdAt: new Date().toISOString(),
+      });
+      setToast(`🎉 New Personal Record for ${selectedExercise.name}!`);
+    } else {
+      setToast(`${selectedExercise.name} logged!`);
+    }
+
+    // Trigger rest timer for strength categories
+    if (selectedExercise.category !== 'cardio') {
+      setRestTimerSeconds(90);
+      setShowRestTimer(true);
+    }
+
     setSelectedExercise(null);
     setSets([]);
     setSearchQuery('');
     setShowAddModal(false);
-  }, [selectedExercise, sets, today]);
+  }, [selectedExercise, sets, today, allWorkouts]);
 
   const handleDeleteWorkout = useCallback(async (id: number) => {
     await db.workouts.delete(id);
@@ -109,6 +193,9 @@ export default function WorkoutScreen() {
         <button className={`tab-switcher__tab ${viewMode === 'today' ? 'active' : ''}`} onClick={() => setViewMode('today')}>
           Today
         </button>
+        <button className={`tab-switcher__tab ${viewMode === 'templates' ? 'active' : ''}`} onClick={() => setViewMode('templates')}>
+          Templates
+        </button>
         <button className={`tab-switcher__tab ${viewMode === 'history' ? 'active' : ''}`} onClick={() => setViewMode('history')}>
           History
         </button>
@@ -154,6 +241,89 @@ export default function WorkoutScreen() {
             💪 Log Exercise
           </button>
         </>
+      ) : viewMode === 'templates' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          {activeTemplate && (
+            <div className="glass-card mb-md" style={{ border: '1px solid rgba(0,230,138,0.3)', background: 'rgba(0, 230, 138, 0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+                <div>
+                  <div className="text-caption">Active Session</div>
+                  <div style={{ fontWeight: 800, fontFamily: 'var(--font-display)', fontSize: '1.25rem', color: 'var(--accent)' }}>
+                    {activeTemplate.name}
+                  </div>
+                </div>
+                <button 
+                  className="btn btn-danger btn-sm"
+                  onClick={() => {
+                    saveActiveTemplate(null);
+                    setToast('Workout session cleared.');
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                >
+                  End Session
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+                {activeTemplate.exercises.map((exName) => {
+                  const loggedToday = todayWorkouts?.some((w) => w.exercise.toLowerCase() === exName.toLowerCase());
+                  return (
+                    <div 
+                      key={exName} 
+                      className="meal-card"
+                      style={{ cursor: loggedToday ? 'default' : 'pointer', opacity: loggedToday ? 0.6 : 1 }}
+                      onClick={() => {
+                        if (loggedToday) return;
+                        const match = EXERCISE_DATABASE.find((ex) => ex.name.toLowerCase() === exName.toLowerCase());
+                        if (match) {
+                          handleSelectExercise(match);
+                          setShowAddModal(true);
+                        } else {
+                          // Fallback to custom
+                          handleSelectExercise({ name: exName, category: 'other', defaultSets: 3, defaultReps: 10 });
+                          setShowAddModal(true);
+                        }
+                      }}
+                    >
+                      <div className="meal-card__icon" style={{ background: loggedToday ? 'var(--accent-dim)' : 'var(--bg-glass-strong)' }}>
+                        {loggedToday ? '✅' : '💪'}
+                      </div>
+                      <div className="meal-card__info">
+                        <div className="meal-card__name">{exName}</div>
+                        <div className="meal-card__meta">
+                          {loggedToday ? 'Completed today' : 'Tap to log sets'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+            <div className="text-caption">Available Routines</div>
+            {WORKOUT_TEMPLATES.map((tpl) => (
+              <div 
+                key={tpl.name} 
+                className="glass-card glass-card--interactive"
+                onClick={() => setSelectedTemplate(tpl)}
+              >
+                <div style={{ fontWeight: 800, fontFamily: 'var(--font-display)', fontSize: '1.125rem', marginBottom: 4, color: 'var(--text-primary)' }}>
+                  {tpl.name}
+                </div>
+                <div className="text-small text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
+                  {tpl.description}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="chip" style={{ background: 'var(--bg-glass-strong)', textTransform: 'capitalize' }}>
+                    {tpl.category} · {tpl.exercises.length} Exercises
+                  </span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent2)' }}>View details →</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
           {Object.keys(historyByDate).length === 0 ? (
@@ -236,6 +406,48 @@ export default function WorkoutScreen() {
               <div style={{ fontWeight: 700, fontSize: '1.125rem' }}>{selectedExercise.name}</div>
               <div className="text-small text-secondary">{selectedExercise.category}</div>
             </div>
+
+            {/* V2 Last Session Box */}
+            {lastSession && (
+              <div className="glass-card mb-md" style={{ padding: '10px 12px', background: 'var(--bg-glass-strong)', fontSize: '0.8125rem', borderLeft: '3px solid var(--accent2)' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>⏮️ Last Session: </span>
+                <span style={{ color: 'var(--text-primary)' }}>
+                  {formatDateShort(lastSession.date)} · Max: {lastSession.maxWeight > 0 ? `${lastSession.maxWeight} kg` : 'BW'} × {lastSession.maxReps} reps · Vol: {lastSession.totalVolume} kg
+                </span>
+              </div>
+            )}
+
+            {/* V2 Progressive Overload Suggestion */}
+            {suggestion && (
+              <div className="glass-card mb-md" style={{ padding: '12px', border: '1px solid rgba(0, 230, 138, 0.15)', background: 'rgba(0, 230, 138, 0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: '1rem' }}>⚡</span>
+                    <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--accent)' }}>Overload Target</span>
+                  </div>
+                  <button 
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleApplyOverload}
+                    style={{ padding: '2px 8px', fontSize: '0.75rem', color: 'var(--accent)', background: 'rgba(0, 230, 138, 0.1)', border: '1px solid rgba(0,230,138,0.2)' }}
+                  >
+                    Apply Suggestion
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Target: <strong>{suggestion.suggestedWeight > 0 ? `${suggestion.suggestedWeight} kg` : 'Bodyweight'} × {suggestion.suggestedReps} reps</strong>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  {suggestion.reason}
+                </div>
+                {suggestion.fatigueWarning && (
+                  <div style={{ fontSize: '0.75rem', color: '#ffb347', display: 'flex', gap: 4, alignItems: 'center', marginTop: 6 }}>
+                    <span>⚠️</span>
+                    <span>{suggestion.fatigueWarning}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="text-caption mb-sm">Sets</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
               {sets.map((set, i) => (
@@ -286,6 +498,53 @@ export default function WorkoutScreen() {
           </>
         )}
       </Modal>
+      {/* Template Detail Modal */}
+      {selectedTemplate && (
+        <Modal 
+          isOpen={!!selectedTemplate} 
+          onClose={() => setSelectedTemplate(null)} 
+          title={selectedTemplate.name}
+        >
+          <div style={{ marginBottom: 'var(--space-md)' }}>
+            <p className="text-small text-secondary" style={{ fontStyle: 'italic', marginBottom: 'var(--space-md)', lineHeight: 1.4 }}>
+              {selectedTemplate.description}
+            </p>
+            <div className="text-caption mb-sm">Routine Checklist</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', maxHeight: 240, overflowY: 'auto', marginBottom: 'var(--space-md)' }}>
+              {selectedTemplate.exercises.map((ex: any, i: number) => (
+                <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{ex.exerciseName}</span>
+                  <span className="text-caption" style={{ fontSize: '0.75rem' }}>
+                    {ex.defaultSets} sets × {ex.defaultReps} reps
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <button 
+            className="btn btn-primary btn-block"
+            onClick={() => {
+              saveActiveTemplate({
+                name: selectedTemplate.name,
+                exercises: selectedTemplate.exercises.map((e: any) => e.exerciseName),
+              });
+              setSelectedTemplate(null);
+              setToast(`Started ${selectedTemplate.name}!`);
+            }}
+          >
+            Start Workout Routine
+          </button>
+        </Modal>
+      )}
+
+      {/* V2 Rest Timer Overlay */}
+      {showRestTimer && (
+        <RestTimer 
+          isOpen={showRestTimer}
+          onClose={() => setShowRestTimer(false)}
+          defaultSeconds={restTimerSeconds}
+        />
+      )}
     </div>
   );
 }

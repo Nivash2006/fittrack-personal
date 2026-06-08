@@ -6,19 +6,25 @@ import { useState, useRef, useEffect } from 'react';
 import { preprocessImageForOcr } from '../ocr/imagePreprocessor';
 import { scanImageWithOcr } from '../ocr/ocrWorker';
 import { extractAndValidateNutrition, type ParsedNutrition } from '../ocr/nutritionExtractor';
+import { recognizeMealsFromText, getConfidenceLabel, type MealRecognitionResult } from '../ocr/mealRecognizer';
+import type { FoodItem } from '../db/foodDatabase';
 
 interface OCRScannerProps {
   isOpen: boolean;
   onClose: () => void;
-  onScanComplete: (nutrition: { calories?: number; protein?: number; carbs?: number; fats?: number }) => void;
+  mode: 'label' | 'meal';
+  onScanComplete?: (nutrition: { calories?: number; protein?: number; carbs?: number; fats?: number }) => void;
+  onMealSelected?: (food: FoodItem) => void;
 }
 
-export default function OCRScanner({ isOpen, onClose, onScanComplete }: OCRScannerProps) {
+export default function OCRScanner({ isOpen, onClose, mode, onScanComplete, onMealSelected }: OCRScannerProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'preprocessing' | 'scanning' | 'complete' | 'failed'>('idle');
   const [progress, setProgress] = useState(0);
   const [scanResult, setScanResult] = useState<ParsedNutrition | null>(null);
+  const [mealResults, setMealResults] = useState<MealRecognitionResult[]>([]);
+  const [rawOcrText, setRawOcrText] = useState<string>('');
   const [scanError, setScanError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -89,20 +95,27 @@ export default function OCRScanner({ isOpen, onClose, onScanComplete }: OCRScann
         setProgress(pct);
       });
 
+      setRawOcrText(text);
+
       // 3. Validation & Parsing Layer
-      const validated = extractAndValidateNutrition(text, confidence);
-      setScanResult(validated);
+      if (mode === 'label') {
+        const validated = extractAndValidateNutrition(text, confidence);
+        setScanResult(validated);
+      } else {
+        const matches = recognizeMealsFromText(text);
+        setMealResults(matches);
+      }
       setStatus('complete');
     } catch (err: any) {
       console.error('OCR Process failed:', err);
       setStatus('failed');
-      setScanError(err.message || 'Optical scanning failed. Please try a cleaner, brighter label photo.');
+      setScanError(err.message || 'Optical scanning failed. Please try a cleaner, brighter photo.');
     }
   };
 
   const handleUseScannedValues = () => {
     if (!scanResult) return;
-    onScanComplete({
+    onScanComplete?.({
       calories: scanResult.calories,
       protein: scanResult.protein,
       carbs: scanResult.carbs,
@@ -119,6 +132,8 @@ export default function OCRScanner({ isOpen, onClose, onScanComplete }: OCRScann
       setPreviewUrl(null);
     }
     setScanResult(null);
+    setMealResults([]);
+    setRawOcrText('');
     setScanError(null);
     setStatus('idle');
     setProgress(0);
@@ -131,7 +146,9 @@ export default function OCRScanner({ isOpen, onClose, onScanComplete }: OCRScann
       <div className="modal-backdrop" onClick={onClose} />
       <div className="modal" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
         <div className="modal__handle" />
-        <h2 className="modal__title">🔬 Label Nutrition Scanner</h2>
+        <h2 className="modal__title">
+          {mode === 'label' ? '🔬 Label Nutrition Scanner' : '📸 Smart Meal Scanner'}
+        </h2>
 
         {status === 'idle' && !selectedFile && (
           <div
@@ -152,7 +169,7 @@ export default function OCRScanner({ isOpen, onClose, onScanComplete }: OCRScann
           >
             <div style={{ fontSize: '2.5rem', marginBottom: 'var(--space-sm)' }}>📸</div>
             <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              Take Photo or Upload Label
+              {mode === 'label' ? 'Take Photo or Upload Label' : 'Take Photo of Your Meal'}
             </div>
             <div className="text-caption mt-xs">
               Drag & drop or tap to browse your gallery
@@ -242,8 +259,8 @@ export default function OCRScanner({ isOpen, onClose, onScanComplete }: OCRScann
           </div>
         )}
 
-        {/* Scan Results Display */}
-        {status === 'complete' && scanResult && (
+        {/* Scan Results Display (Label) */}
+        {status === 'complete' && mode === 'label' && scanResult && (
           <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
             
             {/* Confidence Banner */}
@@ -323,6 +340,83 @@ export default function OCRScanner({ isOpen, onClose, onScanComplete }: OCRScann
           </div>
         )}
 
+        {/* Scan Results Display (Meal Photo) */}
+        {status === 'complete' && mode === 'meal' && (
+          <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Recognised Food Items:
+            </div>
+            {mealResults.length === 0 ? (
+              <div className="text-small text-muted text-center" style={{ padding: 'var(--space-md)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)' }}>
+                No matching foods found in database. Try manual search.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', maxHeight: 240, overflowY: 'auto' }}>
+                {mealResults.map((result, i) => {
+                  const confInfo = getConfidenceLabel(result.tier);
+                  return (
+                    <button
+                      key={i}
+                      className="meal-card glass-card--interactive"
+                      style={{ textAlign: 'left', width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px' }}
+                      onClick={() => {
+                        if (onMealSelected) {
+                          onMealSelected(result.food);
+                        }
+                        handleReset();
+                        onClose();
+                      }}
+                    >
+                      <div className="meal-card__info" style={{ flex: 1 }}>
+                        <div className="meal-card__name">{result.food.name}</div>
+                        <div className="meal-card__meta">
+                          {result.food.caloriesPer100g} kcal/100g · {result.food.servingUnit}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                        <span style={{
+                          fontSize: '0.625rem',
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: `${confInfo.color}1e`,
+                          border: `1px solid ${confInfo.color}40`,
+                          color: confInfo.color
+                        }}>
+                          {confInfo.label} ({result.confidence}%)
+                        </span>
+                        <span className="text-caption" style={{ fontSize: '0.6875rem' }}>
+                          Est. {result.estimatedGrams}g
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            
+            <details style={{ marginTop: 'var(--space-xs)' }}>
+              <summary className="text-caption" style={{ cursor: 'pointer', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                View Raw OCR Readout
+              </summary>
+              <pre style={{
+                marginTop: '6px',
+                padding: 'var(--space-sm)',
+                background: 'rgba(0,0,0,0.2)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.6875rem',
+                color: 'var(--text-secondary)',
+                maxHeight: 100,
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace',
+              }}>
+                {rawOcrText || 'No readable text extracted.'}
+              </pre>
+            </details>
+          </div>
+        )}
+
         {/* Footer Actions */}
         <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-md)' }}>
           <button className="btn btn-secondary flex-1" onClick={onClose}>
@@ -331,11 +425,11 @@ export default function OCRScanner({ isOpen, onClose, onScanComplete }: OCRScann
           
           {status === 'idle' && selectedFile && (
             <button className="btn btn-primary flex-1" onClick={runOcrScan}>
-              🚀 Scan Label
+              {mode === 'label' ? '🚀 Scan Label' : '🔍 Identify Meal'}
             </button>
           )}
 
-          {status === 'complete' && scanResult && (
+          {status === 'complete' && mode === 'label' && scanResult && (
             <button className="btn btn-primary flex-1" onClick={handleUseScannedValues}>
               📝 Fill Meal Log
             </button>

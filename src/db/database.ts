@@ -173,6 +173,37 @@ export interface FastingLog {
   durationHours: number;
   completed: boolean;
   endedAt?: string;
+  pausedAt?: string;
+  totalPausedMs?: number;
+}
+
+/** A saved workout template for reuse */
+export interface WorkoutTemplate {
+  id?: number;
+  name: string;
+  description?: string;
+  /** push / pull / legs / upper / lower / full / cardio */
+  category: string;
+  exercises: Array<{
+    exerciseName: string;
+    defaultSets: number;
+    defaultReps: number;
+    defaultWeight?: number;
+  }>;
+  createdAt: string;
+}
+
+/** Best performance record for a specific exercise */
+export interface PersonalRecord {
+  id?: number;
+  exercise: string;
+  maxWeight: number;
+  maxReps: number;
+  /** Calculated 1RM estimate: weight × (1 + reps/30) */
+  estimated1RM: number;
+  /** ISO date string YYYY-MM-DD */
+  date: string;
+  createdAt: string;
 }
 
 // ─── Database Class ──────────────────────────────────────────────────────────
@@ -191,6 +222,8 @@ export class FitTrackDB extends Dexie {
   progressPhotos!: Table<ProgressPhoto, number>;
   notes!: Table<NoteLog, number>;
   fastingLogs!: Table<FastingLog, number>;
+  workoutTemplates!: Table<WorkoutTemplate, number>;
+  personalRecords!: Table<PersonalRecord, number>;
 
   constructor() {
     super('FitTrackDB');
@@ -251,6 +284,25 @@ export class FitTrackDB extends Dexie {
       progressPhotos: '++id, userId, loggedAt, category',
       notes: '++id, title, notebook, *tags, createdAt, updatedAt',
       fastingLogs: '++id, type, startedAt, completed',
+    });
+
+    // Version 5 Schema (V2 — Workout Templates, Personal Records, Fasting Pause)
+    this.version(5).stores({
+      userProfiles: '++id, email',
+      meals: '++id, date, mealType, [date+mealType]',
+      workouts: '++id, date, category, [date+category]',
+      weightLogs: '++id, userId, weight, unit, source, loggedAt, syncStatus, [loggedAt+weight]',
+      habits: '++id, title',
+      waterLogs: '++id, date',
+      sleepLogs: '++id, date',
+      stepLogs: '++id, date',
+      connectedDevices: '++id, userId, deviceMac, deviceName, lastConnectedAt',
+      syncQueue: '++id, entityType, entityId, operation, createdAt',
+      progressPhotos: '++id, userId, loggedAt, category',
+      notes: '++id, title, notebook, *tags, createdAt, updatedAt',
+      fastingLogs: '++id, type, startedAt, completed, pausedAt',
+      workoutTemplates: '++id, name, category, createdAt',
+      personalRecords: '++id, exercise, date, estimated1RM',
     });
   }
 }

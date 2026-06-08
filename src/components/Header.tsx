@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { supabase } from '../db/supabaseClient';
+import { useAppStore } from '../store/useAppStore';
 import { 
   Menu, 
   X, 
   BookMarked, 
-  Activity, 
   User, 
   LogOut, 
   ShieldAlert, 
-  Flame 
+  Flame,
+  Timer,
+  TrendingDown,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -20,6 +22,7 @@ export default function Header({ onReset }: HeaderProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
+  const activeFast = useAppStore((s) => s.activeFast);
 
   // Helper to resolve header screen title
   const getScreenTitle = (path: string) => {
@@ -87,6 +90,12 @@ export default function Header({ onReset }: HeaderProps) {
 
         {/* Right Column: Dynamic Status Indicators */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {activeFast?.isRunning && (
+            <NavLink to="/fasting" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'none', background: 'var(--accent-dim)', padding: '4px 8px', borderRadius: '99px', fontWeight: 600 }}>
+              <Timer size={12} />
+              <span>Fasting</span>
+            </NavLink>
+          )}
           <div style={{ 
             width: '8px', 
             height: '8px', 
@@ -174,8 +183,23 @@ export default function Header({ onReset }: HeaderProps) {
             className={({ isActive }) => `drawer-nav-item ${isActive ? 'active' : ''}`}
             style={drawerNavItemStyle}
           >
-            <Activity size={18} color="var(--accent)" style={{ flexShrink: 0 }} />
+            <TrendingDown size={18} color="var(--accent2)" style={{ flexShrink: 0 }} />
             <span style={{ marginLeft: '12px' }}>Calorie Deficit</span>
+          </NavLink>
+
+          <NavLink 
+            to="/fasting" 
+            onClick={() => setIsDrawerOpen(false)}
+            className={({ isActive }) => `drawer-nav-item ${isActive ? 'active' : ''}`}
+            style={drawerNavItemStyle}
+          >
+            <span style={{ fontSize: '1rem', lineHeight: 1, flexShrink: 0, position: 'relative' }}>
+              <Timer size={18} color="var(--accent)" />
+              {activeFast?.isRunning && (
+                <span style={{ position: 'absolute', top: -2, right: -2, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 6px var(--accent)' }} />
+              )}
+            </span>
+            <span style={{ marginLeft: '12px' }}>Intermittent Fasting</span>
           </NavLink>
 
           <NavLink 

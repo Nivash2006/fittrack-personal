@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
 import CircularProgress from '../components/CircularProgress';
@@ -8,6 +8,9 @@ import InsightsPanel from '../components/InsightsPanel';
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import { getTodayStr, getGreeting, getLast7Days, getDayName } from '../utils/helpers';
+import { getSuggestedMeals } from '../utils/mealSuggestion';
+import { forecastFromHistory, getProjectedWeightSeries } from '../utils/calorieForecast';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function DashboardScreen() {
   const today = getTodayStr();
@@ -19,12 +22,58 @@ export default function DashboardScreen() {
   const todaySleep = useLiveQuery(() => db.sleepLogs.where('date').equals(today).first(), [today]);
   const todaySteps = useLiveQuery(() => db.stepLogs.where('date').equals(today).first(), [today]);
 
+  // V2 suggestions & forecast queries
+  const allMeals = useLiveQuery(() => db.meals.toArray());
+  const allWeightLogs = useLiveQuery(() => db.weightLogs.orderBy('loggedAt').toArray());
+
   const [waterGlasses, setWaterGlasses] = useState(0);
   const [sleepHours, setSleepHours] = useState('');
   const [stepCount, setStepCount] = useState('');
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [newWeight, setNewWeight] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+
+  // V2 memoized computations
+  const nextMealType = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 11) return 'breakfast';
+    if (hour < 16) return 'lunch';
+    if (hour < 20) return 'dinner';
+    return 'snack';
+  }, []);
+
+  const suggestions = useMemo(() => {
+    if (!profile || !todayMeals) return [];
+    return getSuggestedMeals(profile, todayMeals, nextMealType, 3);
+  }, [profile, todayMeals, nextMealType]);
+
+  const forecast = useMemo(() => {
+    if (!allMeals || !allWeightLogs || !profile) return null;
+    return forecastFromHistory(allMeals, allWeightLogs, profile);
+  }, [allMeals, allWeightLogs, profile]);
+
+  const projectedSeries = useMemo(() => {
+    if (!forecast || !allWeightLogs || !profile) return [];
+    const currentWeight = allWeightLogs.length > 0 ? allWeightLogs[allWeightLogs.length - 1].weight : profile.weightKg;
+    return getProjectedWeightSeries(currentWeight, forecast.averageDailyDeficit);
+  }, [forecast, allWeightLogs, profile]);
+
+  // V2 suggestion logger
+  const handleLogSuggestion = useCallback(async (suggestion: any) => {
+    if (!profile) return;
+    await db.meals.add({
+      foodName: suggestion.food.name,
+      mealType: nextMealType,
+      quantity: suggestion.servingGrams,
+      calories: Math.round(suggestion.calories),
+      protein: Math.round(suggestion.protein * 10) / 10,
+      carbs: Math.round(suggestion.carbs * 10) / 10,
+      fats: Math.round(suggestion.fats * 10) / 10,
+      date: today,
+      createdAt: new Date().toISOString(),
+    });
+    setToast(`Added ${suggestion.food.name} (${suggestion.servingGrams}g) to ${nextMealType}!`);
+  }, [nextMealType, today, profile]);
 
   useEffect(() => {
     if (todayWater) {
@@ -179,6 +228,43 @@ export default function DashboardScreen() {
           <MacroBar label="Fats" value={totalFats} max={profile.fatTarget} type="fats" />
         </div>
       </div>
+
+      {/* Smart Suggestions */}
+      {suggestions.length > 0 && (
+        <div className="glass-card mb-md">
+          <div className="section-header" style={{ marginBottom: 'var(--space-md)' }}>
+            <span className="section-header__title">💡 Smart Suggestions ({nextMealType})</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {suggestions.map((s, i) => (
+              <div key={i} className="meal-card" style={{ padding: '12px', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>{s.food.name}</span>
+                    <button 
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleLogSuggestion(s)}
+                      style={{ padding: '4px 8px', fontSize: '0.75rem', color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid rgba(0,230,138,0.15)' }}
+                    >
+                      + Log {s.servingGrams}g
+                    </button>
+                  </div>
+                  <div className="meal-card__meta" style={{ marginBottom: 6 }}>
+                    {Math.round(s.calories)} kcal · P: {Math.round(s.protein)}g · C: {Math.round(s.carbs)}g · F: {Math.round(s.fats)}g
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {s.reasons.map((r, ri) => (
+                      <span key={ri} style={{ fontSize: '0.6875rem', color: 'var(--accent2)', background: 'rgba(77, 141, 255, 0.08)', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                        {r.icon} {r.text}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats Row */}
       <div className="stats-grid mb-md">
@@ -349,6 +435,42 @@ export default function DashboardScreen() {
           </div>
         )}
       </div>
+
+      {/* 7-Day Forecast */}
+      {forecast && (
+        <div className="glass-card mb-md">
+          <div className="section-header" style={{ marginBottom: 'var(--space-sm)' }}>
+            <span className="section-header__title">📈 7-Day Weight Forecast</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: forecast.trend === 'losing' ? 'var(--accent)' : 'var(--accent3)' }}>
+              {forecast.trend === 'losing' ? '↓ Losing' : forecast.trend === 'gaining' ? '↑ Gaining' : '→ Stable'}
+            </span>
+          </div>
+          
+          <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
+            Based on your 7-day average calorie deficit, you are projected to change by{' '}
+            <strong style={{ color: forecast.projectedWeeklyChange < 0 ? 'var(--accent)' : 'var(--accent3)' }}>
+              {forecast.projectedWeeklyChange.toFixed(2)} kg
+            </strong>{' '}
+            this week.
+          </div>
+
+          {projectedSeries.length > 0 && (
+            <div style={{ height: 100, marginTop: 'var(--space-sm)' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={projectedSeries}>
+                  <XAxis dataKey="day" tick={{ fill: '#9a9ab0', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis domain={['dataMin - 0.2', 'dataMax + 0.2']} hide />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'rgba(18, 18, 26, 0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
+                    formatter={(v: any) => [`${Number(v).toFixed(1)} kg`, 'Weight']} 
+                  />
+                  <Line type="monotone" dataKey="weight" stroke="var(--accent2)" strokeWidth={2} dot={false} strokeDasharray="3 3" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent Meals */}
       <div className="glass-card mb-lg">

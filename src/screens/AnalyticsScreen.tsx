@@ -2,7 +2,9 @@ import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
 import { getLast7Days, getLast30Days, getDayName, formatDateShort } from '../utils/helpers';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { calculateHealthScore, getBandColor, type HealthScoreResult } from '../utils/healthScore';
+import { forecastFromHistory, getProjectedWeightSeries } from '../utils/calorieForecast';
 
 const CHART_COLORS = {
   calories: '#00e68a',
@@ -19,6 +21,7 @@ export default function AnalyticsScreen() {
   const allWorkouts = useLiveQuery(() => db.workouts.toArray());
   const allSleep = useLiveQuery(() => db.sleepLogs.toArray());
   const allSteps = useLiveQuery(() => db.stepLogs.toArray());
+  const allWater = useLiveQuery(() => db.waterLogs.toArray());
 
   const last7 = getLast7Days();
   const last30 = getLast30Days();
@@ -91,6 +94,81 @@ export default function AnalyticsScreen() {
     });
   }, [allSteps, last7]);
 
+  // Health score
+  const healthScore = useMemo<HealthScoreResult | null>(() => {
+    if (!profile || !allMeals || !allWorkouts || !allSleep || !allWater) return null;
+    return calculateHealthScore(profile, allMeals, allWorkouts, allSleep, allWater);
+  }, [profile, allMeals, allWorkouts, allSleep, allWater]);
+
+  // Calorie forecast
+  const forecast = useMemo(() => {
+    if (!allMeals || !weightLogs || !profile) return null;
+    return forecastFromHistory(allMeals, weightLogs, profile);
+  }, [allMeals, weightLogs, profile]);
+
+  const projectedSeries = useMemo(() => {
+    if (!forecast || !weightLogs) return [];
+    const currentWeight = weightLogs.length > 0 ? weightLogs[weightLogs.length - 1].weight : (profile?.weightKg ?? 70);
+    return getProjectedWeightSeries(currentWeight, forecast.averageDailyDeficit);
+  }, [forecast, weightLogs, profile]);
+
+  // V2 Trend alerts
+  const trendAlerts = useMemo(() => {
+    const alerts: string[] = [];
+    if (!allMeals || !profile || !allWorkouts || !allSleep || !allWater) return alerts;
+
+    const last3Days = last7.slice(-3);
+    let consecutiveUnder = 0;
+    let consecutiveOver = 0;
+    last3Days.forEach((date) => {
+      const dayCal = allMeals.filter((m) => m.date === date).reduce((s, m) => s + m.calories, 0);
+      if (dayCal > 0) {
+        if (dayCal < profile.calorieTarget * 0.75) consecutiveUnder++;
+        if (dayCal > profile.calorieTarget * 1.25) consecutiveOver++;
+      }
+    });
+
+    if (consecutiveUnder === 3) {
+      alerts.push("⚠️ Under-eating trend: Calorie intake has been under 75% of your target for 3 consecutive days.");
+    }
+    if (consecutiveOver === 3) {
+      alerts.push("⚠️ Over-eating trend: Calorie intake has been over 125% of your target for 3 consecutive days.");
+    }
+
+    const workoutsLast7 = allWorkouts.filter((w) => last7.includes(w.date)).length;
+    if (workoutsLast7 === 0) {
+      alerts.push("🏋️ Inactivity warning: You haven't logged any workouts in the last 7 days.");
+    }
+
+    const sleepLast7 = allSleep.filter((s) => last7.includes(s.date));
+    if (sleepLast7.length > 0) {
+      const avgSleep = sleepLast7.reduce((s, log) => s + log.hours, 0) / sleepLast7.length;
+      if (avgSleep < 6) {
+        alerts.push("💤 Sleep warning: Your average sleep over the last week is under 6 hours.");
+      }
+    }
+
+    const waterLast7 = allWater.filter((w) => last7.includes(w.date));
+    if (waterLast7.length > 0) {
+      const avgWater = waterLast7.reduce((s, log) => s + log.amount, 0) / 7;
+      if (avgWater < profile.waterTarget * 0.5) {
+        alerts.push("💧 Hydration warning: Your average water intake is under 50% of target.");
+      }
+    }
+
+    return alerts;
+  }, [allMeals, allWorkouts, allSleep, allWater, profile, last7]);
+
+  // V2 Heatmap data
+  const heatmapData = useMemo(() => {
+    if (!allMeals) return [];
+    const last30 = getLast30Days();
+    return last30.map((date) => {
+      const logged = allMeals.some((m) => m.date === date);
+      return { date, logged };
+    });
+  }, [allMeals]);
+
   // Summary stats
   const avgCalories = weeklyCalories.length > 0
     ? Math.round(weeklyCalories.reduce((s, d) => s + d.calories, 0) / weeklyCalories.length)
@@ -115,6 +193,198 @@ export default function AnalyticsScreen() {
       <div className="page-header">
         <h1 className="page-header__title">Analytics</h1>
       </div>
+
+      {/* ── Health Score Section ─────────────────────────────────────── */}
+      {healthScore && (
+        <div className="glass-card mb-md" style={{ border: `1px solid ${getBandColor(healthScore.band)}40` }}>
+          <div className="section-header">
+            <span className="section-header__title">🧠 Health Score</span>
+            <span style={{ fontSize: '0.75rem', color: getBandColor(healthScore.band), fontWeight: 700, textTransform: 'uppercase' }}>
+              {healthScore.band}
+            </span>
+          </div>
+
+          {/* Ring + Score */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xl)', marginBottom: 'var(--space-lg)' }}>
+            <svg width="110" height="110" viewBox="0 0 110 110">
+              <circle cx="55" cy="55" r="46" fill="none" stroke="var(--bg-glass-strong)" strokeWidth="10" />
+              <circle
+                cx="55" cy="55" r="46"
+                fill="none"
+                stroke={getBandColor(healthScore.band)}
+                strokeWidth="10"
+                strokeLinecap="round"
+                strokeDasharray={`${2 * Math.PI * 46}`}
+                strokeDashoffset={`${2 * Math.PI * 46 * (1 - healthScore.overall / 100)}`}
+                transform="rotate(-90 55 55)"
+                style={{ transition: 'stroke-dashoffset 800ms cubic-bezier(0.16,1,0.3,1)', filter: `drop-shadow(0 0 8px ${getBandColor(healthScore.band)})` }}
+              />
+              <text x="55" y="51" textAnchor="middle" fill={getBandColor(healthScore.band)} fontSize="22" fontWeight="800" fontFamily="var(--font-display)">
+                {healthScore.overall}
+              </text>
+              <text x="55" y="66" textAnchor="middle" fill="var(--text-muted)" fontSize="11">
+                / 100
+              </text>
+            </svg>
+            <div style={{ flex: 1 }}>
+              {healthScore.subScores.map((s) => (
+                <div key={s.label} style={{ marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>{s.icon} {s.label}</span>
+                    <span style={{ color: getBandColor(s.band), fontWeight: 700 }}>{s.score}</span>
+                  </div>
+                  <div style={{ height: '4px', background: 'var(--bg-glass-strong)', borderRadius: '99px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${s.score}%`, background: getBandColor(s.band), borderRadius: '99px', transition: 'width 600ms ease' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Insights */}
+          {healthScore.insights.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--space-md)' }}>
+              {healthScore.insights.map((insight, i) => (
+                <div key={i} style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--accent2)' }}>
+                  {insight}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Body Composition */}
+          {(healthScore.bodyFatRange || healthScore.ffmiEstimate) && (
+            <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-md)', paddingTop: 'var(--space-md)', borderTop: '1px solid var(--border-subtle)' }}>
+              {healthScore.bodyFatRange && (
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Est. Body Fat</div>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent2)' }}>
+                    {healthScore.bodyFatRange}
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>estimated range</div>
+                </div>
+              )}
+              <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>BMI</div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {healthScore.bmi}
+                </div>
+                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>{healthScore.bmiCategory}</div>
+              </div>
+              {healthScore.ffmiEstimate && (
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>FFMI</div>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent3)' }}>
+                    {healthScore.ffmiEstimate}
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>fat-free mass idx</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Trend Alerts panel ────────────────────────────────────────── */}
+      {trendAlerts.length > 0 && (
+        <div className="glass-card mb-md" style={{ border: '1px solid rgba(255, 77, 106, 0.15)', background: 'rgba(255, 77, 106, 0.02)' }}>
+          <div className="section-header" style={{ marginBottom: 'var(--space-sm)' }}>
+            <span className="section-header__title" style={{ color: 'var(--danger)' }}>⚠️ Trend Alerts & Warnings</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {trendAlerts.map((alert, i) => (
+              <div key={i} style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                {alert}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Calorie Forecast ─────────────────────────────────────────── */}
+      {forecast && (
+        <div className="glass-card mb-md">
+          <div className="section-header">
+            <span className="section-header__title">📈 7-Day Weight Forecast</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: forecast.trend === 'losing' ? 'var(--accent)' : forecast.trend === 'gaining' ? 'var(--accent3)' : 'var(--accent2)' }}>
+              {forecast.trend === 'losing' ? '↓ Losing' : forecast.trend === 'gaining' ? '↑ Gaining' : '→ Stable'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
+            <div style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Avg Daily</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: 'var(--accent)' }}>{Math.round(forecast.averageDailyCalories)} kcal</div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Proj. 7d</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: forecast.projectedWeeklyChange < 0 ? 'var(--accent)' : 'var(--accent3)' }}>
+                {forecast.projectedWeeklyChange > 0 ? '+' : ''}{forecast.projectedWeeklyChange.toFixed(2)} kg
+              </div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Proj. 30d</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: 'var(--accent2)' }}>
+                {forecast.projectedMonthlyChange > 0 ? '+' : ''}{forecast.projectedMonthlyChange.toFixed(1)} kg
+              </div>
+            </div>
+          </div>
+          {projectedSeries.length > 0 && (
+            <div style={{ height: 140 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={projectedSeries}>
+                  <XAxis dataKey="day" tick={{ fill: '#9a9ab0', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} hide />
+                  <Tooltip contentStyle={customTooltipStyle} formatter={(v: any) => [typeof v === 'number' ? `${v.toFixed(1)} kg` : `${v} kg`, 'Weight']} />
+                  <Line type="monotone" dataKey="weight" stroke="var(--accent2)" strokeWidth={2} dot={false} strokeDasharray="4 2" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 'var(--space-sm)', textAlign: 'center' }}>
+            {forecast.confidenceNote}
+          </div>
+        </div>
+      )}
+
+      {/* ── Meal Logging Consistency Heatmap ──────────────────────────── */}
+      {heatmapData.length > 0 && (
+        <div className="glass-card mb-md">
+          <div className="section-header" style={{ marginBottom: 'var(--space-md)' }}>
+            <span className="section-header__title">📅 30-Day Logging Consistency</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', maxWidth: '280px', margin: '0 auto' }}>
+            {heatmapData.map((d, i) => (
+              <div 
+                key={i}
+                style={{
+                  aspectRatio: '1',
+                  background: d.logged ? 'var(--accent)' : 'var(--bg-glass-strong)',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(255,255,255,0.03)',
+                  boxShadow: d.logged ? '0 0 6px var(--accent-glow)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.625rem',
+                  color: d.logged ? '#0a1a12' : 'var(--text-muted)',
+                  fontWeight: 700
+                }}
+                title={`${d.date}: ${d.logged ? 'Logged' : 'No entries'}`}
+              >
+                {new Date(d.date).getDate()}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--space-md)', marginTop: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--bg-glass-strong)' }} /> Not Logged
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent)' }} /> Logged
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="stats-grid mb-md">

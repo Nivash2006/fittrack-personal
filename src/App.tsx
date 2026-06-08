@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { db } from './db/database';
 import { supabase } from './db/supabaseClient';
@@ -15,6 +15,9 @@ import NotesScreen from './screens/NotesScreen';
 import BottomNav from './components/BottomNav';
 import Header from './components/Header';
 import { syncEngine } from './db/syncEngine';
+
+// Lazy-load heavy screens for better initial bundle size
+const FastingScreen = lazy(() => import('./screens/FastingScreen'));
 
 function App() {
   const [loading, setLoading] = useState(true);
@@ -135,16 +138,19 @@ function App() {
       <div className="app-layout">
         <Header onReset={handleSignOut} />
         <div className="app-content">
-          <Routes>
-            <Route path="/" element={<DashboardScreen />} />
-            <Route path="/diet" element={<DietScreen />} />
-            <Route path="/workout" element={<WorkoutScreen />} />
-            <Route path="/analytics" element={<AnalyticsScreen />} />
-            <Route path="/deficit" element={<DeficitScreen />} />
-            <Route path="/notes" element={<NotesScreen />} />
-            <Route path="/profile" element={<ProfileScreen onReset={handleSignOut} />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <Suspense fallback={<div style={{ padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div>}>
+            <Routes>
+              <Route path="/" element={<DashboardScreen />} />
+              <Route path="/diet" element={<DietScreen />} />
+              <Route path="/workout" element={<WorkoutScreen />} />
+              <Route path="/analytics" element={<AnalyticsScreen />} />
+              <Route path="/deficit" element={<DeficitScreen />} />
+              <Route path="/notes" element={<NotesScreen />} />
+              <Route path="/fasting" element={<FastingScreen />} />
+              <Route path="/profile" element={<ProfileScreen onReset={handleSignOut} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
         </div>
         <BottomNav />
       </div>
