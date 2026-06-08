@@ -98,13 +98,34 @@ export default function DashboardScreen() {
     });
   }, [today]);
 
+  const removeWaterGlass = useCallback(async () => {
+    const todayWaterLogs = await db.waterLogs.where('date').equals(today).toArray();
+    if (todayWaterLogs.length > 0) {
+      const sorted = todayWaterLogs.sort((a, b) => (b.id || 0) - (a.id || 0));
+      const latestId = sorted[0].id;
+      if (latestId !== undefined) {
+        await db.waterLogs.delete(latestId);
+        setToast('Water glass removed.');
+      }
+    }
+  }, [today]);
+
   const saveSleep = useCallback(async () => {
     const h = parseFloat(sleepHours);
-    if (isNaN(h) || h <= 0) return;
+    if (isNaN(h) || h <= 0) {
+      if (todaySleep?.id) {
+        await db.sleepLogs.delete(todaySleep.id);
+        setSleepHours('');
+        setToast('Sleep log deleted.');
+      }
+      return;
+    }
     if (todaySleep?.id) {
       await db.sleepLogs.update(todaySleep.id, { hours: h });
+      setToast('Sleep log updated.');
     } else {
       await db.sleepLogs.add({ hours: h, quality: h >= 7 ? 'good' : h >= 5 ? 'fair' : 'poor', date: today });
+      setToast('Sleep log saved.');
     }
   }, [sleepHours, today, todaySleep]);
 
@@ -262,16 +283,34 @@ export default function DashboardScreen() {
             <span className="section-header__title">💧 Water</span>
           </div>
           <div className="water-drops">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <button
-                key={i}
-                className={`water-drop ${i < waterGlasses ? 'filled' : ''}`}
-                onClick={i === waterGlasses ? addWaterGlass : undefined}
-                title={`Glass ${i + 1}`}
-              >
-                💧
-              </button>
-            ))}
+            {Array.from({ length: 8 }).map((_, i) => {
+              const isFilled = i < waterGlasses;
+              const isLastFilled = i === waterGlasses - 1;
+              const isNextToFill = i === waterGlasses;
+              return (
+                <button
+                  key={i}
+                  className={`water-drop ${isFilled ? 'filled' : ''}`}
+                  onClick={
+                    isNextToFill
+                      ? addWaterGlass
+                      : isLastFilled
+                      ? removeWaterGlass
+                      : undefined
+                  }
+                  title={isLastFilled ? `Tap to remove Glass ${i + 1}` : `Glass ${i + 1}`}
+                  style={{
+                    cursor: (isNextToFill || isLastFilled) ? 'pointer' : 'default',
+                    opacity: isFilled ? 1 : 0.45,
+                    transform: isLastFilled ? 'scale(1.08)' : 'none',
+                    borderStyle: isNextToFill ? 'dashed' : 'solid',
+                    transition: 'all 150ms ease'
+                  }}
+                >
+                  💧
+                </button>
+              );
+            })}
           </div>
           <div className="text-small text-secondary mt-sm">
             {waterGlasses * 250}ml / {profile.waterTarget}ml

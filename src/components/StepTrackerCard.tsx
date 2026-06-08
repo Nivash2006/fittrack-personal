@@ -274,6 +274,15 @@ export default function StepTrackerCard() {
     setToast(`Steps updated to ${parsed}`);
   };
 
+  const handleClearSteps = async () => {
+    if (todaySteps?.id) {
+      await db.stepLogs.delete(todaySteps.id);
+      setToast("Today's steps cleared.");
+    } else {
+      setToast("No steps logged today to clear.");
+    }
+  };
+
   // Add steps (+1k, +5k)
   const quickAddSteps = async (amount: number) => {
     const current = todaySteps?.count || 0;
@@ -634,6 +643,15 @@ export default function StepTrackerCard() {
               <button className="btn btn-primary" onClick={handleSaveManualSteps} style={{ padding: '8px 16px', fontSize: '0.875rem' }}>
                 Save Steps
               </button>
+              {currentSteps > 0 && (
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={handleClearSteps} 
+                  style={{ padding: '8px 12px', fontSize: '0.875rem', color: 'var(--danger)', border: '1px solid var(--danger)' }}
+                >
+                  🗑️ Clear
+                </button>
+              )}
             </div>
           </div>
 
