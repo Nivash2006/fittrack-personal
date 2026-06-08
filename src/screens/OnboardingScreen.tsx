@@ -5,6 +5,7 @@ import {
   calculateTDEE,
   calculateTargetCalories,
   calculateMacros,
+  calculateWaterTarget,
 } from '../utils/helpers';
 import { supabase } from '../db/supabaseClient';
 
@@ -26,6 +27,7 @@ interface WizardState {
   heightCm: string;
   weightKg: string;
   goal: Goal;
+  dietType: 'balanced' | 'low_carb' | 'high_protein';
   activityLevel: ActivityLevel;
   adjustedCalories: number | null;
 }
@@ -90,6 +92,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
       heightCm: '170',
       weightKg: '70',
       goal: 'maintain',
+      dietType: 'balanced',
       activityLevel: 'moderate',
       adjustedCalories: null,
     };
@@ -134,7 +137,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
   const tdee = Math.round(calculateTDEE(bmr, state.activityLevel));
   const autoCalories = calculateTargetCalories(tdee, state.goal);
   const targetCalories = state.adjustedCalories ?? autoCalories;
-  const macros = calculateMacros(targetCalories, state.goal);
+  const macros = calculateMacros(targetCalories, state.goal, state.dietType);
 
   // ── Navigation ──────────────────────────────────────────────────────────
 
@@ -165,11 +168,12 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
         gender: state.gender,
         activityLevel: state.activityLevel,
         goal: state.goal,
+        dietType: state.dietType,
         calorieTarget: targetCalories,
         proteinTarget: macros.protein,
         carbTarget: macros.carbs,
         fatTarget: macros.fats,
-        waterTarget: 2500,
+        waterTarget: calculateWaterTarget(weightKg, state.activityLevel),
         createdAt: new Date().toISOString(),
       });
       localStorage.removeItem(LS_KEY);
@@ -446,6 +450,7 @@ function StepContent({ step, state, onUpdate, bmr, tdee, targetCalories, macros,
             {GOALS.map((g) => (
               <button
                 key={g.value}
+                type="button"
                 onClick={() => onUpdate({ goal: g.value, adjustedCalories: null })}
                 style={{
                   display: 'flex',
@@ -473,6 +478,44 @@ function StepContent({ step, state, onUpdate, bmr, tdee, targetCalories, macros,
                 )}
               </button>
             ))}
+          </div>
+
+          <div style={{ marginTop: 'var(--space-xl)' }}>
+            <label className="form-label" style={{ textAlign: 'center', display: 'block', marginBottom: 'var(--space-md)' }}>
+              Select Diet Profile
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+              {[
+                { value: 'balanced', label: '🥗 Balanced', desc: 'Standard splits' },
+                { value: 'low_carb', label: '🥩 Low Carb', desc: 'Higher fat, low carbs' },
+                { value: 'high_protein', label: '💪 High Protein', desc: 'Maximize protein' }
+              ].map((d) => (
+                <button
+                  key={d.value}
+                  type="button"
+                  onClick={() => onUpdate({ dietType: d.value as any })}
+                  style={{
+                    padding: '12px 8px',
+                    borderRadius: 'var(--radius-md)',
+                    border: `2px solid ${state.dietType === d.value ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                    background: state.dietType === d.value ? 'var(--accent-dim)' : 'var(--bg-glass)',
+                    color: state.dietType === d.value ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    transition: 'all 200ms ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    textAlign: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <span>{d.label}</span>
+                  <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', fontWeight: 400 }}>{d.desc}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       );

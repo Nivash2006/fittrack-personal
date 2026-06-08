@@ -291,35 +291,107 @@ export default function DashboardScreen() {
         </div>
 
         {/* Sleep & Steps */}
-        <div className="glass-card">
-          <div className="form-group">
-            <label className="form-label">😴 Sleep (hrs)</label>
-            <div style={{ display: 'flex', gap: '6px' }}>
+        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          {/* Steps section */}
+          <div>
+            <div className="section-header" style={{ marginBottom: '6px' }}>
+              <span className="section-header__title" style={{ fontSize: '0.875rem' }}>👟 Steps</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                {todaySteps?.count || 0} / 10,000
+              </span>
+            </div>
+            {/* Progress bar */}
+            <div style={{ height: '6px', background: 'var(--bg-glass-strong)', borderRadius: '99px', overflow: 'hidden', marginBottom: '8px' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.min(100, ((todaySteps?.count || 0) / 10000) * 100)}%`,
+                background: 'linear-gradient(90deg, var(--accent2), #4d8dff)',
+                borderRadius: '99px',
+                transition: 'width 300ms ease'
+              }} />
+            </div>
+            {/* Quick buttons & Input */}
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <button 
+                className="btn btn-secondary btn-sm" 
+                onClick={async () => {
+                  const current = todaySteps?.count || 0;
+                  const next = current + 1000;
+                  if (todaySteps?.id) {
+                    await db.stepLogs.update(todaySteps.id, { count: next });
+                  } else {
+                    await db.stepLogs.add({ count: next, date: today });
+                  }
+                  setStepCount(String(next));
+                }}
+                style={{ padding: '4px 8px', fontSize: '0.6875rem' }}
+              >
+                +1k
+              </button>
+              <button 
+                className="btn btn-secondary btn-sm" 
+                onClick={async () => {
+                  const current = todaySteps?.count || 0;
+                  const next = current + 5000;
+                  if (todaySteps?.id) {
+                    await db.stepLogs.update(todaySteps.id, { count: next });
+                  } else {
+                    await db.stepLogs.add({ count: next, date: today });
+                  }
+                  setStepCount(String(next));
+                }}
+                style={{ padding: '4px 8px', fontSize: '0.6875rem' }}
+              >
+                +5k
+              </button>
+              <div style={{ display: 'flex', gap: '4px', marginLeft: 'auto', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  value={stepCount}
+                  onChange={(e) => setStepCount(e.target.value)}
+                  placeholder="5000"
+                  style={{ padding: '4px 8px', fontSize: '0.75rem', width: '60px', height: '28px', border: '1px solid var(--border-subtle)', background: 'var(--bg-glass)', borderRadius: '4px' }}
+                  min="0"
+                />
+                <button className="btn btn-primary btn-sm" onClick={saveSteps} style={{ padding: '4px 8px', height: '28px' }}>✓</button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+
+          {/* Sleep section */}
+          <div>
+            <div className="section-header" style={{ marginBottom: '6px' }}>
+              <span className="section-header__title" style={{ fontSize: '0.875rem' }}>😴 Sleep</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                {todaySleep?.hours || 0}h / 8h
+              </span>
+            </div>
+            {/* Progress bar */}
+            <div style={{ height: '6px', background: 'var(--bg-glass-strong)', borderRadius: '99px', overflow: 'hidden', marginBottom: '8px' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.min(100, ((todaySleep?.hours || 0) / 8) * 100)}%`,
+                background: 'linear-gradient(90deg, #b585ff, var(--accent3))',
+                borderRadius: '99px',
+                transition: 'width 300ms ease'
+              }} />
+            </div>
+            {/* Input & Save */}
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end' }}>
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginRight: 'auto' }}>Target: 7-9 hours</span>
               <input
                 type="number"
                 value={sleepHours}
                 onChange={(e) => setSleepHours(e.target.value)}
                 placeholder="7"
-                style={{ padding: '8px 12px', fontSize: '0.875rem' }}
+                style={{ padding: '4px 8px', fontSize: '0.75rem', width: '50px', height: '28px', border: '1px solid var(--border-subtle)', background: 'var(--bg-glass)', borderRadius: '4px' }}
                 step="0.5"
                 min="0"
                 max="24"
               />
-              <button className="btn btn-secondary btn-sm" onClick={saveSleep}>✓</button>
-            </div>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">👟 Steps</label>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <input
-                type="number"
-                value={stepCount}
-                onChange={(e) => setStepCount(e.target.value)}
-                placeholder="5000"
-                style={{ padding: '8px 12px', fontSize: '0.875rem' }}
-                min="0"
-              />
-              <button className="btn btn-secondary btn-sm" onClick={saveSteps}>✓</button>
+              <button className="btn btn-primary btn-sm" onClick={saveSleep} style={{ padding: '4px 8px', height: '28px' }}>✓</button>
             </div>
           </div>
         </div>

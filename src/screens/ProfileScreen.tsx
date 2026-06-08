@@ -4,7 +4,15 @@ import { db } from '../db/database';
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import ProgressPhotos from '../components/ProgressPhotos';
-import { calculateBMI, getBMICategory, calculateBMR, calculateTDEE, calculateTargetCalories, calculateMacros } from '../utils/helpers';
+import { 
+  calculateBMI, 
+  getBMICategory, 
+  calculateBMR, 
+  calculateTDEE, 
+  calculateTargetCalories, 
+  calculateMacros,
+  calculateWaterTarget
+} from '../utils/helpers';
 
 interface ProfileScreenProps {
   onReset: () => void;
@@ -28,6 +36,7 @@ export default function ProfileScreen({ onReset }: ProfileScreenProps) {
   const [editAge, setEditAge] = useState('');
   const [editGender, setEditGender] = useState<'male' | 'female'>('male');
   const [editGoal, setEditGoal] = useState<'lose' | 'maintain' | 'gain'>('maintain');
+  const [editDietType, setEditDietType] = useState<'balanced' | 'low_carb' | 'high_protein'>('balanced');
   const [editActivity, setEditActivity] = useState<'sedentary' | 'light' | 'moderate' | 'active' | 'very_active'>('moderate');
 
   // Weight log
@@ -41,6 +50,7 @@ export default function ProfileScreen({ onReset }: ProfileScreenProps) {
     setEditAge(String(profile.age));
     setEditGender(profile.gender);
     setEditGoal(profile.goal);
+    setEditDietType(profile.dietType || 'balanced');
     setEditActivity(profile.activityLevel);
     setShowEditModal(true);
   };
@@ -53,7 +63,8 @@ export default function ProfileScreen({ onReset }: ProfileScreenProps) {
     const bmr = calculateBMR(editGender, w, h, a);
     const tdee = calculateTDEE(bmr, editActivity);
     const targetCal = calculateTargetCalories(tdee, editGoal);
-    const macros = calculateMacros(targetCal, editGoal);
+    const macros = calculateMacros(targetCal, editGoal, editDietType);
+    const water = calculateWaterTarget(w, editActivity);
 
     await db.userProfiles.update(profile.id, {
       name: editName || profile.name,
@@ -62,15 +73,17 @@ export default function ProfileScreen({ onReset }: ProfileScreenProps) {
       age: a,
       gender: editGender,
       goal: editGoal,
+      dietType: editDietType,
       activityLevel: editActivity,
       calorieTarget: targetCal,
       proteinTarget: macros.protein,
       carbTarget: macros.carbs,
       fatTarget: macros.fats,
+      waterTarget: water,
     });
     setToast('Profile updated!');
     setShowEditModal(false);
-  }, [profile, editName, editHeight, editWeight, editAge, editGender, editGoal, editActivity]);
+  }, [profile, editName, editHeight, editWeight, editAge, editGender, editGoal, editDietType, editActivity]);
 
   const handleLogWeight = useCallback(async () => {
     const w = parseFloat(newWeight);
@@ -347,6 +360,14 @@ export default function ProfileScreen({ onReset }: ProfileScreenProps) {
               <option value="very_active">Very Active</option>
             </select>
           </div>
+        </div>
+        <div className="form-group mt-sm">
+          <label className="form-label">Diet Profile</label>
+          <select value={editDietType} onChange={(e) => setEditDietType(e.target.value as any)}>
+            <option value="balanced">🥗 Balanced (Standard split)</option>
+            <option value="low_carb">🥩 Low Carb (Higher fat, low carbs)</option>
+            <option value="high_protein">💪 High Protein (Maximize protein)</option>
+          </select>
         </div>
         <button className="btn btn-primary btn-block mt-md" onClick={handleSaveProfile}>
           Save Changes

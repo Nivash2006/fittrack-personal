@@ -82,16 +82,50 @@ export function calculateTargetCalories(
   }
 }
 
-export function calculateMacros(calories: number, goal: 'lose' | 'maintain' | 'gain') {
-  // Protein: 30% lose, 25% maintain, 30% gain
-  // Carbs: 35% lose, 50% maintain, 45% gain  
-  // Fats: 35% lose, 25% maintain, 25% gain
-  const splits = {
-    lose: { protein: 0.3, carbs: 0.35, fats: 0.35 },
-    maintain: { protein: 0.25, carbs: 0.5, fats: 0.25 },
-    gain: { protein: 0.3, carbs: 0.45, fats: 0.25 },
+export function calculateWaterTarget(
+  weightKg: number,
+  activityLevel: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active'
+): number {
+  // Base: 35 ml per kg of body weight
+  const base = weightKg * 35;
+  // Activity modifiers in ml
+  const modifiers = {
+    sedentary: 0,
+    light: 250,
+    moderate: 500,
+    active: 750,
+    very_active: 1000,
   };
-  const s = splits[goal];
+  const activeAdjustment = modifiers[activityLevel] || 0;
+  // Round to nearest 250 ml (one standard glass size)
+  return Math.round((base + activeAdjustment) / 250) * 250;
+}
+
+export function calculateMacros(
+  calories: number, 
+  goal: 'lose' | 'maintain' | 'gain',
+  dietType: 'balanced' | 'low_carb' | 'high_protein' = 'balanced'
+) {
+  const splits = {
+    balanced: {
+      lose: { protein: 0.3, carbs: 0.35, fats: 0.35 },
+      maintain: { protein: 0.25, carbs: 0.5, fats: 0.25 },
+      gain: { protein: 0.25, carbs: 0.5, fats: 0.25 },
+    },
+    low_carb: {
+      lose: { protein: 0.35, carbs: 0.15, fats: 0.5 },
+      maintain: { protein: 0.3, carbs: 0.2, fats: 0.5 },
+      gain: { protein: 0.3, carbs: 0.25, fats: 0.45 },
+    },
+    high_protein: {
+      lose: { protein: 0.4, carbs: 0.3, fats: 0.3 },
+      maintain: { protein: 0.35, carbs: 0.4, fats: 0.25 },
+      gain: { protein: 0.35, carbs: 0.4, fats: 0.25 },
+    }
+  };
+
+  const dietConfig = splits[dietType] || splits.balanced;
+  const s = dietConfig[goal];
   return {
     protein: Math.round((calories * s.protein) / 4),
     carbs: Math.round((calories * s.carbs) / 4),

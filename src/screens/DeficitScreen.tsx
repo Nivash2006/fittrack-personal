@@ -1,7 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
-import { getLast7Days, getDayName, calculateBMR, calculateTDEE, getTodayStr } from '../utils/helpers';
+import { supabase } from '../db/supabaseClient';
+import Toast from '../components/Toast';
+import { 
+  getLast7Days, 
+  getDayName, 
+  calculateBMR, 
+  calculateTDEE, 
+  getTodayStr, 
+  calculateMacros, 
+  calculateWaterTarget 
+} from '../utils/helpers';
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, Legend } from 'recharts';
 
 export default function DeficitScreen() {
@@ -19,6 +29,7 @@ export default function DeficitScreen() {
   const [age, setAge] = useState<number>(profile?.age ?? 28);
   const [gender, setGender] = useState<'male' | 'female'>(profile?.gender ?? 'male');
   const [activityLevel, setActivityLevel] = useState<string>(profile?.activityLevel ?? 'moderate');
+  const [toast, setToast] = useState<string | null>(null);
 
   // Sync state with profile when it loads
   useMemo(() => {
@@ -39,6 +50,55 @@ export default function DeficitScreen() {
   const tdee = useMemo(() => {
     return Math.round(calculateTDEE(bmr, activityLevel as any));
   }, [bmr, activityLevel]);
+
+  const handleApplyToProfile = async () => {
+    if (!profile?.id) return;
+    const targetCal = tdee - 500;
+    const diet = profile.dietType || 'balanced';
+    const macros = calculateMacros(targetCal, 'lose', diet);
+    const water = calculateWaterTarget(weight, activityLevel as any);
+
+    await db.userProfiles.update(profile.id, {
+      heightCm: height,
+      weightKg: weight,
+      age: age,
+      gender: gender,
+      activityLevel: activityLevel as any,
+      goal: 'lose',
+      calorieTarget: targetCal,
+      proteinTarget: macros.protein,
+      carbTarget: macros.carbs,
+      fatTarget: macros.fats,
+      waterTarget: water,
+    });
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          name: profile.name,
+          email: profile.email,
+          height_cm: height,
+          weight_kg: weight,
+          age: age,
+          gender: gender,
+          activity_level: activityLevel,
+          goal: 'lose',
+          calorie_target: targetCal,
+          protein_target: macros.protein,
+          carb_target: macros.carbs,
+          fat_target: macros.fats,
+          water_target: water,
+          created_at: profile.createdAt
+        });
+      }
+    } catch (err) {
+      console.error('Failed to sync to cloud:', err);
+    }
+
+    setToast('Applied updated settings to your official profile!');
+  };
 
   // Map out 7 days of calorie deficit data
   const deficitData = useMemo(() => {
@@ -221,6 +281,13 @@ export default function DeficitScreen() {
             <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent)' }}>{tdee - 500} kcal</div>
           </div>
         </div>
+        <button 
+          className="btn btn-primary btn-block mt-md" 
+          onClick={handleApplyToProfile}
+          style={{ height: '44px' }}
+        >
+          💾 Apply Calculated Targets to Profile
+        </button>
       </div>
 
       {/* Deficit Concept & Framework Explanation */}
@@ -331,6 +398,7 @@ export default function DeficitScreen() {
           </div>
         </div>
       </div>
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   );
 }
