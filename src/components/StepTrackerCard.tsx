@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
 import { getTodayStr, getLast7Days, getDayName } from '../utils/helpers';
+import { supabase } from '../db/supabaseClient';
 import Modal from './Modal';
 import Toast from './Toast';
 
@@ -23,6 +24,27 @@ export default function StepTrackerCard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [customClientId, setCustomClientId] = useState(localStorage.getItem('fittrack_google_client_id') || '');
   const [showConfig, setShowConfig] = useState(false);
+
+  // Check Supabase provider token on mount
+  useEffect(() => {
+    const checkSupabaseProviderToken = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.provider_token) {
+          const token = session.provider_token;
+          const expiryTime = Date.now() + 3600 * 1000;
+          localStorage.setItem('fittrack_google_token', token);
+          localStorage.setItem('fittrack_google_token_expiry', String(expiryTime));
+          
+          setGoogleToken(token);
+          setGoogleTokenExpiry(String(expiryTime));
+        }
+      } catch (err) {
+        console.error('Error fetching Supabase provider token:', err);
+      }
+    };
+    checkSupabaseProviderToken();
+  }, []);
 
   // Live motion visual indicator
   const [lastAcceleration, setLastAcceleration] = useState<number>(0);
