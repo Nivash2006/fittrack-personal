@@ -7,6 +7,7 @@ import DeviceConnectionCard from '../components/DeviceConnectionCard';
 import InsightsPanel from '../components/InsightsPanel';
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
+import StepTrackerCard from '../components/StepTrackerCard';
 import { getTodayStr, getGreeting, getLast7Days, getDayName } from '../utils/helpers';
 import { getSuggestedMeals } from '../utils/mealSuggestion';
 import { forecastFromHistory, getProjectedWeightSeries } from '../utils/calorieForecast';
@@ -20,7 +21,6 @@ export default function DashboardScreen() {
   const habits = useLiveQuery(() => db.habits.toArray());
   const weightLogs = useLiveQuery(() => db.weightLogs.orderBy('loggedAt').reverse().limit(7).toArray());
   const todaySleep = useLiveQuery(() => db.sleepLogs.where('date').equals(today).first(), [today]);
-  const todaySteps = useLiveQuery(() => db.stepLogs.where('date').equals(today).first(), [today]);
 
   // V2 suggestions & forecast queries
   const allMeals = useLiveQuery(() => db.meals.toArray());
@@ -28,7 +28,6 @@ export default function DashboardScreen() {
 
   const [waterGlasses, setWaterGlasses] = useState(0);
   const [sleepHours, setSleepHours] = useState('');
-  const [stepCount, setStepCount] = useState('');
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [newWeight, setNewWeight] = useState('');
   const [toast, setToast] = useState<string | null>(null);
@@ -86,10 +85,6 @@ export default function DashboardScreen() {
     if (todaySleep) setSleepHours(String(todaySleep.hours));
   }, [todaySleep]);
 
-  useEffect(() => {
-    if (todaySteps) setStepCount(String(todaySteps.count));
-  }, [todaySteps]);
-
   const totalCalories = todayMeals?.reduce((s, m) => s + m.calories, 0) ?? 0;
   const totalProtein = todayMeals?.reduce((s, m) => s + m.protein, 0) ?? 0;
   const totalCarbs = todayMeals?.reduce((s, m) => s + m.carbs, 0) ?? 0;
@@ -112,16 +107,6 @@ export default function DashboardScreen() {
       await db.sleepLogs.add({ hours: h, quality: h >= 7 ? 'good' : h >= 5 ? 'fair' : 'poor', date: today });
     }
   }, [sleepHours, today, todaySleep]);
-
-  const saveSteps = useCallback(async () => {
-    const c = parseInt(stepCount);
-    if (isNaN(c) || c < 0) return;
-    if (todaySteps?.id) {
-      await db.stepLogs.update(todaySteps.id, { count: c });
-    } else {
-      await db.stepLogs.add({ count: c, date: today });
-    }
-  }, [stepCount, today, todaySteps]);
 
   const toggleHabit = useCallback(async (habitId: number) => {
     const habit = await db.habits.get(habitId);
@@ -266,6 +251,9 @@ export default function DashboardScreen() {
         </div>
       )}
 
+      {/* Premium Step Counter */}
+      <StepTrackerCard />
+
       {/* Quick Stats Row */}
       <div className="stats-grid mb-md">
         {/* Water */}
@@ -290,109 +278,38 @@ export default function DashboardScreen() {
           </div>
         </div>
 
-        {/* Sleep & Steps */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          {/* Steps section */}
-          <div>
-            <div className="section-header" style={{ marginBottom: '6px' }}>
-              <span className="section-header__title" style={{ fontSize: '0.875rem' }}>👟 Steps</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                {todaySteps?.count || 0} / 10,000
-              </span>
-            </div>
-            {/* Progress bar */}
-            <div style={{ height: '6px', background: 'var(--bg-glass-strong)', borderRadius: '99px', overflow: 'hidden', marginBottom: '8px' }}>
-              <div style={{
-                height: '100%',
-                width: `${Math.min(100, ((todaySteps?.count || 0) / 10000) * 100)}%`,
-                background: 'linear-gradient(90deg, var(--accent2), #4d8dff)',
-                borderRadius: '99px',
-                transition: 'width 300ms ease'
-              }} />
-            </div>
-            {/* Quick buttons & Input */}
-            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <button 
-                className="btn btn-secondary btn-sm" 
-                onClick={async () => {
-                  const current = todaySteps?.count || 0;
-                  const next = current + 1000;
-                  if (todaySteps?.id) {
-                    await db.stepLogs.update(todaySteps.id, { count: next });
-                  } else {
-                    await db.stepLogs.add({ count: next, date: today });
-                  }
-                  setStepCount(String(next));
-                }}
-                style={{ padding: '4px 8px', fontSize: '0.6875rem' }}
-              >
-                +1k
-              </button>
-              <button 
-                className="btn btn-secondary btn-sm" 
-                onClick={async () => {
-                  const current = todaySteps?.count || 0;
-                  const next = current + 5000;
-                  if (todaySteps?.id) {
-                    await db.stepLogs.update(todaySteps.id, { count: next });
-                  } else {
-                    await db.stepLogs.add({ count: next, date: today });
-                  }
-                  setStepCount(String(next));
-                }}
-                style={{ padding: '4px 8px', fontSize: '0.6875rem' }}
-              >
-                +5k
-              </button>
-              <div style={{ display: 'flex', gap: '4px', marginLeft: 'auto', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  value={stepCount}
-                  onChange={(e) => setStepCount(e.target.value)}
-                  placeholder="5000"
-                  style={{ padding: '4px 8px', fontSize: '0.75rem', width: '60px', height: '28px', border: '1px solid var(--border-subtle)', background: 'var(--bg-glass)', borderRadius: '4px' }}
-                  min="0"
-                />
-                <button className="btn btn-primary btn-sm" onClick={saveSteps} style={{ padding: '4px 8px', height: '28px' }}>✓</button>
-              </div>
-            </div>
+        {/* Dedicated Sleep Card */}
+        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div className="section-header" style={{ marginBottom: '6px' }}>
+            <span className="section-header__title" style={{ fontSize: '0.875rem' }}>😴 Sleep Tracker</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              {todaySleep?.hours || 0}h / 8h
+            </span>
           </div>
-
-          <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
-
-          {/* Sleep section */}
-          <div>
-            <div className="section-header" style={{ marginBottom: '6px' }}>
-              <span className="section-header__title" style={{ fontSize: '0.875rem' }}>😴 Sleep</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                {todaySleep?.hours || 0}h / 8h
-              </span>
-            </div>
-            {/* Progress bar */}
-            <div style={{ height: '6px', background: 'var(--bg-glass-strong)', borderRadius: '99px', overflow: 'hidden', marginBottom: '8px' }}>
-              <div style={{
-                height: '100%',
-                width: `${Math.min(100, ((todaySleep?.hours || 0) / 8) * 100)}%`,
-                background: 'linear-gradient(90deg, #b585ff, var(--accent3))',
-                borderRadius: '99px',
-                transition: 'width 300ms ease'
-              }} />
-            </div>
-            {/* Input & Save */}
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end' }}>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginRight: 'auto' }}>Target: 7-9 hours</span>
-              <input
-                type="number"
-                value={sleepHours}
-                onChange={(e) => setSleepHours(e.target.value)}
-                placeholder="7"
-                style={{ padding: '4px 8px', fontSize: '0.75rem', width: '50px', height: '28px', border: '1px solid var(--border-subtle)', background: 'var(--bg-glass)', borderRadius: '4px' }}
-                step="0.5"
-                min="0"
-                max="24"
-              />
-              <button className="btn btn-primary btn-sm" onClick={saveSleep} style={{ padding: '4px 8px', height: '28px' }}>✓</button>
-            </div>
+          {/* Progress bar */}
+          <div style={{ height: '6px', background: 'var(--bg-glass-strong)', borderRadius: '99px', overflow: 'hidden', marginBottom: '8px' }}>
+            <div style={{
+              height: '100%',
+              width: `${Math.min(100, ((todaySleep?.hours || 0) / 8) * 100)}%`,
+              background: 'linear-gradient(90deg, #b585ff, var(--accent3))',
+              borderRadius: '99px',
+              transition: 'width 300ms ease'
+            }} />
+          </div>
+          {/* Input & Save */}
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end' }}>
+            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginRight: 'auto' }}>Target: 7-9 hours</span>
+            <input
+              type="number"
+              value={sleepHours}
+              onChange={(e) => setSleepHours(e.target.value)}
+              placeholder="7"
+              style={{ padding: '4px 8px', fontSize: '0.75rem', width: '50px', height: '28px', border: '1px solid var(--border-subtle)', background: 'var(--bg-glass)', borderRadius: '4px' }}
+              step="0.5"
+              min="0"
+              max="24"
+            />
+            <button className="btn btn-primary btn-sm" onClick={saveSleep} style={{ padding: '4px 8px', height: '28px' }}>✓</button>
           </div>
         </div>
       </div>
