@@ -29,6 +29,8 @@ export default function DeficitScreen() {
   const [age, setAge] = useState<number>(profile?.age ?? 28);
   const [gender, setGender] = useState<'male' | 'female'>(profile?.gender ?? 'male');
   const [activityLevel, setActivityLevel] = useState<string>(profile?.activityLevel ?? 'moderate');
+  const [targetWeight, setTargetWeight] = useState<number>(profile?.weightKg ?? 70);
+  const [targetDays, setTargetDays] = useState<number>(60);
   const [toast, setToast] = useState<string | null>(null);
 
   // Sync state with profile when it loads
@@ -39,6 +41,7 @@ export default function DeficitScreen() {
       setAge(profile.age);
       setGender(profile.gender);
       setActivityLevel(profile.activityLevel);
+      setTargetWeight(profile.weightKg - (profile.goal === 'lose' ? 5 : profile.goal === 'gain' ? -5 : 0));
     }
   }, [profile]);
 
@@ -51,12 +54,41 @@ export default function DeficitScreen() {
     return Math.round(calculateTDEE(bmr, activityLevel as any));
   }, [bmr, activityLevel]);
 
+  const weightChange = useMemo(() => {
+    return targetWeight - weight;
+  }, [targetWeight, weight]);
+
+  const totalCalorieOffset = useMemo(() => {
+    return weightChange * 7700;
+  }, [weightChange]);
+
+  const dailyCalorieOffset = useMemo(() => {
+    if (targetDays <= 0) return 0;
+    return Math.round(totalCalorieOffset / targetDays);
+  }, [totalCalorieOffset, targetDays]);
+
+  const targetCal = useMemo(() => {
+    const calculated = tdee + dailyCalorieOffset;
+    return Math.max(1000, calculated);
+  }, [tdee, dailyCalorieOffset]);
+
+  const targetGoal = useMemo(() => {
+    if (weightChange < -0.1) return 'lose';
+    if (weightChange > 0.1) return 'gain';
+    return 'maintain';
+  }, [weightChange]);
+
+  const recommendedWater = useMemo(() => {
+    return calculateWaterTarget(targetWeight, activityLevel as any);
+  }, [targetWeight, activityLevel]);
+
+  const recommendedMacros = useMemo(() => {
+    const diet = profile?.dietType || 'balanced';
+    return calculateMacros(targetCal, targetGoal, diet);
+  }, [targetCal, targetGoal, profile?.dietType]);
+
   const handleApplyToProfile = async () => {
     if (!profile?.id) return;
-    const targetCal = tdee - 500;
-    const diet = profile.dietType || 'balanced';
-    const macros = calculateMacros(targetCal, 'lose', diet);
-    const water = calculateWaterTarget(weight, activityLevel as any);
 
     await db.userProfiles.update(profile.id, {
       heightCm: height,
@@ -64,12 +96,12 @@ export default function DeficitScreen() {
       age: age,
       gender: gender,
       activityLevel: activityLevel as any,
-      goal: 'lose',
+      goal: targetGoal,
       calorieTarget: targetCal,
-      proteinTarget: macros.protein,
-      carbTarget: macros.carbs,
-      fatTarget: macros.fats,
-      waterTarget: water,
+      proteinTarget: recommendedMacros.protein,
+      carbTarget: recommendedMacros.carbs,
+      fatTarget: recommendedMacros.fats,
+      waterTarget: recommendedWater,
     });
 
     try {
@@ -84,12 +116,12 @@ export default function DeficitScreen() {
           age: age,
           gender: gender,
           activity_level: activityLevel,
-          goal: 'lose',
+          goal: targetGoal,
           calorie_target: targetCal,
-          protein_target: macros.protein,
-          carb_target: macros.carbs,
-          fat_target: macros.fats,
-          water_target: water,
+          protein_target: recommendedMacros.protein,
+          carb_target: recommendedMacros.carbs,
+          fat_target: recommendedMacros.fats,
+          water_target: recommendedWater,
           created_at: profile.createdAt
         });
       }
@@ -97,7 +129,7 @@ export default function DeficitScreen() {
       console.error('Failed to sync to cloud:', err);
     }
 
-    setToast('Applied updated settings to your official profile!');
+    setToast('Applied updated target settings to your profile!');
   };
 
   // Map out 7 days of calorie deficit data
@@ -236,7 +268,7 @@ export default function DeficitScreen() {
         </div>
         <div className="form-grid mb-md">
           <div>
-            <label className="form-label">Weight (kg)</label>
+            <label className="form-label">Current Weight (kg)</label>
             <input type="number" value={weight} onChange={(e) => setWeight(Number(e.target.value))} />
           </div>
           <div>
@@ -267,20 +299,104 @@ export default function DeficitScreen() {
           </select>
         </div>
 
-        <div className="stats-grid mt-md" style={{ background: 'rgba(255,255,255,0.02)', padding: 'var(--space-md)', borderRadius: 8 }}>
+        <div className="section-header" style={{ marginTop: 'var(--space-md)' }}>
+          <span className="section-header__title" style={{ fontSize: '0.95rem' }}>🎯 Weight Goal Targets</span>
+        </div>
+        <div className="form-grid mb-md">
+          <div>
+            <label className="form-label">Target Weight (kg)</label>
+            <input 
+              type="number" 
+              value={targetWeight} 
+              onChange={(e) => setTargetWeight(Number(e.target.value))} 
+            />
+          </div>
+          <div>
+            <label className="form-label">Timeframe (Days)</label>
+            <input 
+              type="number" 
+              value={targetDays} 
+              onChange={(e) => setTargetDays(Number(e.target.value))} 
+            />
+          </div>
+        </div>
+
+        <div className="stats-grid mt-md" style={{ background: 'rgba(255,255,255,0.02)', padding: 'var(--space-md)', borderRadius: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--space-md)' }}>
           <div>
             <div className="text-muted" style={{ fontSize: '0.75rem' }}>BMR (Base Metabolism)</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>{bmr} kcal</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>{bmr} kcal</div>
           </div>
           <div>
             <div className="text-muted" style={{ fontSize: '0.75rem' }}>TDEE (Maintenance)</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent2)' }}>{tdee} kcal</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent2)' }}>{tdee} kcal</div>
           </div>
           <div>
-            <div className="text-muted" style={{ fontSize: '0.75rem' }}>Recommended Deficit Intake</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent)' }}>{tdee - 500} kcal</div>
+            <div className="text-muted" style={{ fontSize: '0.75rem' }}>Target Calorie Intake</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent)' }}>{targetCal} kcal</div>
+          </div>
+          <div>
+            <div className="text-muted" style={{ fontSize: '0.75rem' }}>Daily Calorie Offset</div>
+            <div style={{ 
+              fontSize: '1.2rem', 
+              fontWeight: 700, 
+              color: dailyCalorieOffset === 0 ? 'var(--text-primary)' : dailyCalorieOffset < 0 ? 'var(--accent)' : 'var(--danger)' 
+            }}>
+              {dailyCalorieOffset > 0 ? `+${dailyCalorieOffset}` : dailyCalorieOffset} kcal
+            </div>
+          </div>
+          <div>
+            <div className="text-muted" style={{ fontSize: '0.75rem' }}>Target Water Intake</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent3)' }}>{(recommendedWater / 1000).toFixed(1)} L</div>
+          </div>
+          <div>
+            <div className="text-muted" style={{ fontSize: '0.75rem' }}>Weight Change Pace</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              {targetDays > 0 ? `${((weightChange / targetDays) * 7).toFixed(2)} kg/week` : '0 kg/week'}
+            </div>
           </div>
         </div>
+
+        {/* Recommended Macros Target based on Target Weight */}
+        <div className="mt-md" style={{ background: 'rgba(255,255,255,0.01)', padding: 'var(--space-md)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="text-caption mb-sm">🎯 Macro Targets based on Target Weight</div>
+          <div style={{ display: 'flex', justifyContent: 'space-around', gap: 'var(--space-sm)' }}>
+            <div className="text-center">
+              <div className="text-muted" style={{ fontSize: '0.7rem' }}>PROTEIN</div>
+              <div style={{ fontWeight: 700, color: 'var(--accent2)', fontSize: '1.1rem' }}>{recommendedMacros.protein}g</div>
+              <div className="text-small text-muted">{recommendedMacros.protein * 4} kcal</div>
+            </div>
+            <div className="text-center">
+              <div className="text-muted" style={{ fontSize: '0.7rem' }}>CARBS</div>
+              <div style={{ fontWeight: 700, color: '#ffb347', fontSize: '1.1rem' }}>{recommendedMacros.carbs}g</div>
+              <div className="text-small text-muted">{recommendedMacros.carbs * 4} kcal</div>
+            </div>
+            <div className="text-center">
+              <div className="text-muted" style={{ fontSize: '0.7rem' }}>FATS</div>
+              <div style={{ fontWeight: 700, color: 'var(--danger)', fontSize: '1.1rem' }}>{recommendedMacros.fats}g</div>
+              <div className="text-small text-muted">{recommendedMacros.fats * 9} kcal</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Safety Warnings for aggressive goal pace or extreme calorie limits */}
+        {Math.abs(dailyCalorieOffset) > 1000 && (
+          <div className="mt-md" style={{ padding: 'var(--space-sm) var(--space-md)', background: 'rgba(255, 179, 71, 0.1)', borderRadius: 6, border: '1px solid rgba(255, 179, 71, 0.25)', color: '#ffb347', fontSize: '0.8125rem', lineHeight: 1.4 }}>
+            <strong>⚠️ Aggressive Target Warning:</strong> A daily calorie offset of {Math.abs(dailyCalorieOffset)} kcal/day exceeds the recommended limits. Targeting a pace of more than 1,000 kcal/day offset (approx 1 kg/week loss or gain) can be difficult to sustain and may cause muscle loss or nutritional issues. Consider increasing target days.
+          </div>
+        )}
+
+        {(gender === 'female' ? targetCal < 1200 : targetCal < 1500) && (
+          <div className="mt-md" style={{ padding: 'var(--space-sm) var(--space-md)', background: 'rgba(255, 77, 106, 0.1)', borderRadius: 6, border: '1px solid rgba(255, 77, 106, 0.25)', color: 'var(--danger)', fontSize: '0.8125rem', lineHeight: 1.4 }}>
+            <strong>🚨 High Risk Calorie Alert:</strong> Your target daily calories ({targetCal} kcal) falls below the absolute safety minimum threshold of {gender === 'female' ? '1,200' : '1,500'} kcal for {gender}s. Consuming too few calories can lead to nutritional deficiencies, extreme fatigue, and severe metabolic slowdown.
+          </div>
+        )}
+
+        {targetCal < bmr && !(gender === 'female' ? targetCal < 1200 : targetCal < 1500) && (
+          <div className="mt-md" style={{ padding: 'var(--space-sm) var(--space-md)', background: 'rgba(255, 179, 71, 0.1)', borderRadius: 6, border: '1px solid rgba(255, 179, 71, 0.25)', color: '#ffb347', fontSize: '0.8125rem', lineHeight: 1.4 }}>
+            <strong>⚠️ Warning:</strong> Your target daily calories ({targetCal} kcal) is below your Basal Metabolic Rate (BMR = {bmr} kcal). Your BMR is the energy your body needs just to support vital functions at rest.
+          </div>
+        )}
+
         <button 
           className="btn btn-primary btn-block mt-md" 
           onClick={handleApplyToProfile}

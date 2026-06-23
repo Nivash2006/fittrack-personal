@@ -111,6 +111,15 @@ export const EXERCISE_DATABASE: Exercise[] = [
   { name: 'Rowing Machine', category: 'cardio', defaultSets: 1, defaultReps: 20 },
   { name: 'Swimming', category: 'cardio', defaultSets: 1, defaultReps: 30 },
   { name: 'Burpees', category: 'cardio', defaultSets: 3, defaultReps: 15 },
+  
+  // ── Sports & Games ─────────────────────────────────────────────────────────
+  { name: 'Cricket', category: 'cardio', defaultSets: 1, defaultReps: 60 },
+  { name: 'Badminton', category: 'cardio', defaultSets: 1, defaultReps: 45 },
+  { name: 'Football (Soccer)', category: 'cardio', defaultSets: 1, defaultReps: 90 },
+  { name: 'Basketball', category: 'cardio', defaultSets: 1, defaultReps: 45 },
+  { name: 'Table Tennis', category: 'cardio', defaultSets: 1, defaultReps: 30 },
+  { name: 'Tennis', category: 'cardio', defaultSets: 1, defaultReps: 60 },
+  { name: 'Volleyball', category: 'cardio', defaultSets: 1, defaultReps: 45 },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

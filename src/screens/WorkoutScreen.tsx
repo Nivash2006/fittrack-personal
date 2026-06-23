@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
-import { EXERCISE_DATABASE, searchExercises, getExercisesByCategory, EXERCISE_CATEGORIES, type Exercise } from '../db/exercises';
+import { EXERCISE_DATABASE, EXERCISE_CATEGORIES, type Exercise } from '../db/exercises';
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import { getTodayStr, formatDateShort } from '../utils/helpers';
@@ -30,6 +30,20 @@ export default function WorkoutScreen() {
   const [sets, setSets] = useState<Array<{ reps: number; weight: number }>>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'today' | 'history' | 'templates'>('today');
+
+  // Custom exercise states & DB Query
+  const customExercises = useLiveQuery(() => db.customExercises.toArray()) ?? [];
+  const [showCreateCustom, setShowCreateCustom] = useState(false);
+  const [newCustomName, setNewCustomName] = useState('');
+  const [newCustomCategory, setNewCustomCategory] = useState<Exercise['category']>('cardio');
+
+  // Cardio specific states
+  const [cardioDuration, setCardioDuration] = useState<number>(30);
+  const [cardioSpeed, setCardioSpeed] = useState<string>('');
+  const [cardioIncline, setCardioIncline] = useState<string>('');
+  const [cardioDistance, setCardioDistance] = useState<string>('');
+  const [cardioResistance, setCardioResistance] = useState<string>('');
+  const [cardioCadence, setCardioCadence] = useState<string>('');
 
   // V2 workout coach states
   const [showRestTimer, setShowRestTimer] = useState(false);
@@ -75,19 +89,45 @@ export default function WorkoutScreen() {
     setToast('Applied progressive overload targets!');
   };
 
-  const filteredExercises = searchQuery.length >= 2
-    ? searchExercises(searchQuery)
-    : filterCategory
-      ? getExercisesByCategory(filterCategory as Exercise['category'])
-      : EXERCISE_DATABASE.slice(0, 15);
+  const mergedExercises = useMemo(() => {
+    const formattedCustoms: Exercise[] = customExercises.map(ce => ({
+      name: ce.name,
+      category: ce.category,
+      defaultSets: ce.category === 'cardio' ? 1 : 3,
+      defaultReps: ce.category === 'cardio' ? 30 : 10,
+    }));
+    return [...EXERCISE_DATABASE, ...formattedCustoms];
+  }, [customExercises]);
+
+  const filteredExercises = useMemo(() => {
+    let result = mergedExercises;
+    if (searchQuery.trim().length >= 2) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(ex => ex.name.toLowerCase().includes(query));
+    } else if (filterCategory) {
+      result = result.filter(ex => ex.category === filterCategory);
+    } else {
+      result = result.slice(0, 15);
+    }
+    return result;
+  }, [mergedExercises, searchQuery, filterCategory]);
 
   const handleSelectExercise = (ex: Exercise) => {
     setSelectedExercise(ex);
-    const initialSets = Array.from({ length: ex.defaultSets }, () => ({
-      reps: ex.defaultReps,
-      weight: 0,
-    }));
-    setSets(initialSets);
+    if (ex.category === 'cardio') {
+      setCardioDuration(ex.defaultReps || 30);
+      setCardioSpeed('');
+      setCardioIncline('');
+      setCardioDistance('');
+      setCardioResistance('');
+      setCardioCadence('');
+    } else {
+      const initialSets = Array.from({ length: ex.defaultSets }, () => ({
+        reps: ex.defaultReps,
+        weight: 0,
+      }));
+      setSets(initialSets);
+    }
   };
 
   const updateSet = (idx: number, field: 'reps' | 'weight', value: number) => {
@@ -107,16 +147,27 @@ export default function WorkoutScreen() {
   const handleSaveWorkout = useCallback(async () => {
     if (!selectedExercise) return;
 
-    // Check for new Personal Record before adding this workout
-    const isPR = isNewPersonalRecord(selectedExercise.name, sets, allWorkouts ?? []);
+    const isCardio = selectedExercise.category === 'cardio';
+    const isPR = !isCardio && isNewPersonalRecord(selectedExercise.name, sets, allWorkouts ?? []);
 
-    await db.workouts.add({
+    const workoutData: any = {
       exercise: selectedExercise.name,
       category: selectedExercise.category,
-      sets,
+      sets: isCardio ? [] : sets,
       date: today,
       createdAt: new Date().toISOString(),
-    });
+    };
+
+    if (isCardio) {
+      workoutData.duration = Number(cardioDuration);
+      if (cardioSpeed.trim()) workoutData.speed = Number(cardioSpeed);
+      if (cardioIncline.trim()) workoutData.incline = Number(cardioIncline);
+      if (cardioDistance.trim()) workoutData.distance = Number(cardioDistance);
+      if (cardioResistance.trim()) workoutData.resistanceLevel = Number(cardioResistance);
+      if (cardioCadence.trim()) workoutData.strideCadence = Number(cardioCadence);
+    }
+
+    await db.workouts.add(workoutData);
 
     if (isPR) {
       const maxWeight = Math.max(...sets.map((s) => s.weight));
@@ -137,7 +188,7 @@ export default function WorkoutScreen() {
     }
 
     // Trigger rest timer for strength categories
-    if (selectedExercise.category !== 'cardio') {
+    if (!isCardio) {
       setRestTimerSeconds(90);
       setShowRestTimer(true);
     }
@@ -146,7 +197,65 @@ export default function WorkoutScreen() {
     setSets([]);
     setSearchQuery('');
     setShowAddModal(false);
-  }, [selectedExercise, sets, today, allWorkouts]);
+  }, [
+    selectedExercise, 
+    sets, 
+    today, 
+    allWorkouts, 
+    cardioDuration, 
+    cardioSpeed, 
+    cardioIncline, 
+    cardioDistance, 
+    cardioResistance, 
+    cardioCadence
+  ]);
+
+  const renderWorkoutBadges = (w: any) => {
+    if (w.category === 'cardio') {
+      return (
+        <div className="workout-card__sets" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          <span className="set-badge" style={{ background: 'var(--accent-dim)', color: 'var(--accent)' }}>
+            ⏱️ {w.duration || 0} min
+          </span>
+          {w.distance !== undefined && (
+            <span className="set-badge" style={{ background: 'rgba(77, 141, 255, 0.1)', color: '#4d8dff' }}>
+              📍 {w.distance} km
+            </span>
+          )}
+          {w.speed !== undefined && (
+            <span className="set-badge" style={{ background: 'rgba(0, 230, 138, 0.1)', color: 'var(--accent)' }}>
+              🏃 {w.speed} km/h
+            </span>
+          )}
+          {w.incline !== undefined && (
+            <span className="set-badge" style={{ background: 'rgba(255, 179, 71, 0.1)', color: '#ffb347' }}>
+              📈 Incline: {w.incline}%
+            </span>
+          )}
+          {w.resistanceLevel !== undefined && (
+            <span className="set-badge" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}>
+              ⚙️ Level: {w.resistanceLevel}
+            </span>
+          )}
+          {w.strideCadence !== undefined && (
+            <span className="set-badge" style={{ background: 'rgba(244, 63, 94, 0.1)', color: '#f43f5e' }}>
+              👣 Stride: {w.strideCadence} SPM
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="workout-card__sets">
+        {w.sets.map((s: any, i: number) => (
+          <span key={i} className="set-badge">
+            {s.reps}×{s.weight > 0 ? `${s.weight}kg` : 'BW'}
+          </span>
+        ))}
+      </div>
+    );
+  };
 
   const handleDeleteWorkout = useCallback(async (id: number) => {
     await db.workouts.delete(id);
@@ -226,13 +335,7 @@ export default function WorkoutScreen() {
                       </button>
                     </div>
                   </div>
-                  <div className="workout-card__sets">
-                    {w.sets.map((s, i) => (
-                      <span key={i} className="set-badge">
-                        {s.reps}×{s.weight > 0 ? `${s.weight}kg` : 'BW'}
-                      </span>
-                    ))}
-                  </div>
+                  {renderWorkoutBadges(w)}
                 </div>
               ))}
             </div>
@@ -342,13 +445,7 @@ export default function WorkoutScreen() {
                       <span className="workout-card__exercise">{w.exercise}</span>
                       <span className="workout-card__category">{w.category}</span>
                     </div>
-                    <div className="workout-card__sets">
-                      {w.sets.map((s, i) => (
-                        <span key={i} className="set-badge">
-                          {s.reps}×{s.weight > 0 ? `${s.weight}kg` : 'BW'}
-                        </span>
-                      ))}
-                    </div>
+                    {renderWorkoutBadges(w)}
                   </div>
                 ))}
               </div>
@@ -357,9 +454,76 @@ export default function WorkoutScreen() {
         </div>
       )}
 
-      {/* Add Exercise Modal */}
-      <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setSelectedExercise(null); setSearchQuery(''); }} title="Log Exercise">
-        {!selectedExercise ? (
+      <Modal 
+        isOpen={showAddModal} 
+        onClose={() => { 
+          setShowAddModal(false); 
+          setSelectedExercise(null); 
+          setSearchQuery(''); 
+          setShowCreateCustom(false); 
+        }} 
+        title="Log Exercise"
+      >
+        {showCreateCustom ? (
+          <div>
+            <div className="text-caption mb-sm">Create Custom Exercise</div>
+            <div className="form-group mb-md">
+              <label className="form-label">Exercise Name</label>
+              <input 
+                type="text" 
+                value={newCustomName} 
+                onChange={(e) => setNewCustomName(e.target.value)} 
+                placeholder="e.g. Cricket, Incline Walking" 
+              />
+            </div>
+            <div className="form-group mb-md">
+              <label className="form-label">Category</label>
+              <select 
+                value={newCustomCategory} 
+                onChange={(e) => setNewCustomCategory(e.target.value as any)}
+                style={{ padding: '8px', fontSize: '0.875rem', width: '100%', background: 'var(--bg-glass-strong)', color: 'var(--text-primary)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-sm)' }}
+              >
+                {EXERCISE_CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat.toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+              <button className="btn btn-secondary flex-1" onClick={() => setShowCreateCustom(false)}>
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary flex-1" 
+                onClick={async () => {
+                  if (!newCustomName.trim()) {
+                    setToast('Please enter an exercise name');
+                    return;
+                  }
+                  const exists = mergedExercises.some(ex => ex.name.toLowerCase() === newCustomName.trim().toLowerCase());
+                  if (exists) {
+                    setToast('An exercise with this name already exists');
+                    return;
+                  }
+                  await db.customExercises.add({
+                    name: newCustomName.trim(),
+                    category: newCustomCategory
+                  });
+                  setToast(`Custom exercise "${newCustomName.trim()}" created!`);
+                  handleSelectExercise({
+                    name: newCustomName.trim(),
+                    category: newCustomCategory,
+                    defaultSets: newCustomCategory === 'cardio' ? 1 : 3,
+                    defaultReps: newCustomCategory === 'cardio' ? 30 : 10,
+                  });
+                  setNewCustomName('');
+                  setShowCreateCustom(false);
+                }}
+              >
+                Create & Select
+              </button>
+            </div>
+          </div>
+        ) : !selectedExercise ? (
           <>
             <div className="search-bar">
               <span className="search-bar__icon">🔍</span>
@@ -371,20 +535,33 @@ export default function WorkoutScreen() {
                 autoFocus
               />
             </div>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: 'var(--space-md)' }}>
-              <button className={`chip ${!filterCategory ? 'active' : ''}`} onClick={() => setFilterCategory('')}>
-                All
-              </button>
-              {EXERCISE_CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  className={`chip ${filterCategory === cat ? 'active' : ''}`}
-                  onClick={() => setFilterCategory(cat)}
-                >
-                  {cat}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <button className={`chip ${!filterCategory ? 'active' : ''}`} onClick={() => setFilterCategory('')}>
+                  All
                 </button>
-              ))}
+                {EXERCISE_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat}
+                    className={`chip ${filterCategory === cat ? 'active' : ''}`}
+                    onClick={() => setFilterCategory(cat)}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+              <button 
+                className="btn btn-secondary btn-sm" 
+                onClick={() => {
+                  setNewCustomName(searchQuery);
+                  setShowCreateCustom(true);
+                }}
+                style={{ padding: '6px 10px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+              >
+                ➕ Custom
+              </button>
             </div>
+
             <div style={{ maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' }}>
               {filteredExercises.map((ex, i) => (
                 <button
@@ -398,6 +575,20 @@ export default function WorkoutScreen() {
                   </div>
                 </button>
               ))}
+              {filteredExercises.length === 0 && (
+                <div className="text-center py-md">
+                  <p className="text-muted text-small mb-sm">No exercises found.</p>
+                  <button 
+                    className="btn btn-primary btn-sm" 
+                    onClick={() => {
+                      setNewCustomName(searchQuery);
+                      setShowCreateCustom(true);
+                    }}
+                  >
+                    Create Custom Exercise "{searchQuery}"
+                  </button>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -408,7 +599,7 @@ export default function WorkoutScreen() {
             </div>
 
             {/* V2 Last Session Box */}
-            {lastSession && (
+            {lastSession && selectedExercise.category !== 'cardio' && (
               <div className="glass-card mb-md" style={{ padding: '10px 12px', background: 'var(--bg-glass-strong)', fontSize: '0.8125rem', borderLeft: '3px solid var(--accent2)' }}>
                 <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>⏮️ Last Session: </span>
                 <span style={{ color: 'var(--text-primary)' }}>
@@ -418,7 +609,7 @@ export default function WorkoutScreen() {
             )}
 
             {/* V2 Progressive Overload Suggestion */}
-            {suggestion && (
+            {suggestion && selectedExercise.category !== 'cardio' && (
               <div className="glass-card mb-md" style={{ padding: '12px', border: '1px solid rgba(0, 230, 138, 0.15)', background: 'rgba(0, 230, 138, 0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -448,45 +639,149 @@ export default function WorkoutScreen() {
               </div>
             )}
 
-            <div className="text-caption mb-sm">Sets</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-              {sets.map((set, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                  <span className="text-muted" style={{ width: 28, fontSize: '0.8125rem', fontWeight: 600 }}>#{i + 1}</span>
-                  <div style={{ flex: 1 }}>
-                    <label className="form-label" style={{ fontSize: '0.625rem', marginBottom: 2 }}>Reps</label>
-                    <input
-                      type="number"
-                      value={set.reps}
-                      onChange={(e) => updateSet(i, 'reps', Number(e.target.value))}
-                      style={{ padding: '8px', fontSize: '0.875rem' }}
-                      min="1"
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label className="form-label" style={{ fontSize: '0.625rem', marginBottom: 2 }}>Weight (kg)</label>
-                    <input
-                      type="number"
-                      value={set.weight}
-                      onChange={(e) => updateSet(i, 'weight', Number(e.target.value))}
-                      style={{ padding: '8px', fontSize: '0.875rem' }}
-                      min="0"
-                      step="0.5"
-                    />
-                  </div>
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => removeSet(i)}
-                    style={{ padding: '4px 8px', color: 'var(--danger)', fontSize: '0.875rem', marginTop: 16 }}
-                  >
-                    ✕
-                  </button>
+            {selectedExercise.category === 'cardio' ? (
+              <>
+                <div className="form-group mb-md">
+                  <label className="form-label">Duration (minutes)*</label>
+                  <input
+                    type="number"
+                    value={cardioDuration}
+                    onChange={(e) => setCardioDuration(Number(e.target.value))}
+                    min="1"
+                    required
+                  />
                 </div>
-              ))}
-            </div>
-            <button className="btn btn-secondary btn-block btn-sm mb-md" onClick={addSet}>
-              + Add Set
-            </button>
+
+                <div className="form-grid mb-md">
+                  <div>
+                    <label className="form-label">Distance (km)</label>
+                    <input
+                      type="number"
+                      value={cardioDistance}
+                      onChange={(e) => setCardioDistance(e.target.value)}
+                      placeholder="e.g. 5.0"
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+
+                  {(selectedExercise.name.toLowerCase().includes('treadmill') ||
+                    selectedExercise.name.toLowerCase().includes('run') ||
+                    selectedExercise.name.toLowerCase().includes('jog') ||
+                    selectedExercise.name.toLowerCase().includes('walk') ||
+                    selectedExercise.name.toLowerCase().includes('cycl') ||
+                    selectedExercise.name.toLowerCase().includes('bike') ||
+                    selectedExercise.name.toLowerCase().includes('elliptical')) && (
+                    <div>
+                      <label className="form-label">Speed (km/h)</label>
+                      <input
+                        type="number"
+                        value={cardioSpeed}
+                        onChange={(e) => setCardioSpeed(e.target.value)}
+                        placeholder="e.g. 8.5"
+                        step="0.1"
+                        min="0"
+                      />
+                    </div>
+                  )}
+
+                  {(selectedExercise.name.toLowerCase().includes('treadmill') ||
+                    selectedExercise.name.toLowerCase().includes('incline') ||
+                    selectedExercise.name.toLowerCase().includes('walk')) && (
+                    <div>
+                      <label className="form-label">Incline (%)</label>
+                      <input
+                        type="number"
+                        value={cardioIncline}
+                        onChange={(e) => setCardioIncline(e.target.value)}
+                        placeholder="e.g. 2"
+                        step="0.5"
+                        min="0"
+                      />
+                    </div>
+                  )}
+
+                  {(selectedExercise.name.toLowerCase().includes('cycl') ||
+                    selectedExercise.name.toLowerCase().includes('bike') ||
+                    selectedExercise.name.toLowerCase().includes('elliptical') ||
+                    selectedExercise.name.toLowerCase().includes('stair') ||
+                    selectedExercise.name.toLowerCase().includes('rowing')) && (
+                    <div>
+                      <label className="form-label">Resistance Level</label>
+                      <input
+                        type="number"
+                        value={cardioResistance}
+                        onChange={(e) => setCardioResistance(e.target.value)}
+                        placeholder="e.g. 8"
+                        step="1"
+                        min="0"
+                      />
+                    </div>
+                  )}
+
+                  {(selectedExercise.name.toLowerCase().includes('run') ||
+                    selectedExercise.name.toLowerCase().includes('jog') ||
+                    selectedExercise.name.toLowerCase().includes('elliptical') ||
+                    selectedExercise.name.toLowerCase().includes('cycl') ||
+                    selectedExercise.name.toLowerCase().includes('bike')) && (
+                    <div>
+                      <label className="form-label">Stride Cadence (SPM)</label>
+                      <input
+                        type="number"
+                        value={cardioCadence}
+                        onChange={(e) => setCardioCadence(e.target.value)}
+                        placeholder="e.g. 160"
+                        step="1"
+                        min="0"
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-caption mb-sm">Sets</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+                  {sets.map((set, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                      <span className="text-muted" style={{ width: 28, fontSize: '0.8125rem', fontWeight: 600 }}>#{i + 1}</span>
+                      <div style={{ flex: 1 }}>
+                        <label className="form-label" style={{ fontSize: '0.625rem', marginBottom: 2 }}>Reps</label>
+                        <input
+                          type="number"
+                          value={set.reps}
+                          onChange={(e) => updateSet(i, 'reps', Number(e.target.value))}
+                          style={{ padding: '8px', fontSize: '0.875rem' }}
+                          min="1"
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label className="form-label" style={{ fontSize: '0.625rem', marginBottom: 2 }}>Weight (kg)</label>
+                        <input
+                          type="number"
+                          value={set.weight}
+                          onChange={(e) => updateSet(i, 'weight', Number(e.target.value))}
+                          style={{ padding: '8px', fontSize: '0.875rem' }}
+                          min="0"
+                          step="0.5"
+                        />
+                      </div>
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() => removeSet(i)}
+                        style={{ padding: '4px 8px', color: 'var(--danger)', fontSize: '0.875rem', marginTop: 16 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button className="btn btn-secondary btn-block btn-sm mb-md" onClick={addSet}>
+                  + Add Set
+                </button>
+              </>
+            )}
+
             <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
               <button className="btn btn-secondary flex-1" onClick={() => setSelectedExercise(null)}>
                 Back
