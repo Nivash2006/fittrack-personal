@@ -283,7 +283,7 @@ export default function DashboardScreen() {
             <span className="section-header__title">💧 Water</span>
           </div>
           <div className="water-drops">
-            {Array.from({ length: 8 }).map((_, i) => {
+            {Array.from({ length: Math.max(8, Math.ceil((profile?.waterTarget ?? 2000) / 250), waterGlasses + 1) }).map((_, i) => {
               const isFilled = i < waterGlasses;
               const isLastFilled = i === waterGlasses - 1;
               const isNextToFill = i === waterGlasses;
