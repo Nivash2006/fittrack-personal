@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
-import { getLast7Days, getLast30Days, getDayName, formatDateShort } from '../utils/helpers';
+import { getLast7Days, getLast30Days, getDayName, formatDateShort, calculateBMR, calculateTDEE } from '../utils/helpers';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { calculateHealthScore, getBandColor, type HealthScoreResult } from '../utils/healthScore';
 import { forecastFromHistory, getProjectedWeightSeries } from '../utils/calorieForecast';
@@ -22,6 +22,8 @@ export default function AnalyticsScreen() {
   const allSleep = useLiveQuery(() => db.sleepLogs.toArray());
   const allSteps = useLiveQuery(() => db.stepLogs.toArray());
   const allWater = useLiveQuery(() => db.waterLogs.toArray());
+
+  const [forecastMode, setForecastMode] = useState<'actual' | 'planned'>('actual');
 
   const last7 = getLast7Days();
   const last30 = getLast30Days();
@@ -100,7 +102,7 @@ export default function AnalyticsScreen() {
     return calculateHealthScore(profile, allMeals, allWorkouts, allSleep, allWater);
   }, [profile, allMeals, allWorkouts, allSleep, allWater]);
 
-  // Calorie forecast
+  // Calorie forecast (Actual / Meal Logs based)
   const forecast = useMemo(() => {
     if (!allMeals || !weightLogs || !profile) return null;
     return forecastFromHistory(allMeals, weightLogs, profile);
@@ -111,6 +113,66 @@ export default function AnalyticsScreen() {
     const currentWeight = weightLogs.length > 0 ? weightLogs[weightLogs.length - 1].weight : (profile?.weightKg ?? 70);
     return getProjectedWeightSeries(currentWeight, forecast.averageDailyDeficit);
   }, [forecast, weightLogs, profile]);
+
+  // Calorie forecast (Planned / Target Goal based)
+  const bmr = useMemo(() => {
+    if (!profile) return 0;
+    return calculateBMR(profile.gender, profile.weightKg, profile.heightCm, profile.age);
+  }, [profile]);
+
+  const tdee = useMemo(() => {
+    if (!profile || !bmr) return 0;
+    return calculateTDEE(bmr, profile.activityLevel);
+  }, [profile, bmr]);
+
+  const plannedDeficit = useMemo(() => {
+    if (!profile || !tdee) return 0;
+    return tdee - profile.calorieTarget;
+  }, [profile, tdee]);
+
+  const plannedProjectedSeries = useMemo(() => {
+    if (!profile || !weightLogs) return [];
+    const currentW = weightLogs.length > 0 ? weightLogs[weightLogs.length - 1].weight : (profile?.weightKg ?? 70);
+    return getProjectedWeightSeries(currentW, plannedDeficit);
+  }, [profile, weightLogs, plannedDeficit]);
+
+  const plannedWeeklyChange = useMemo(() => {
+    return -(plannedDeficit * 7) / 7700;
+  }, [plannedDeficit]);
+
+  const plannedMonthlyChange = useMemo(() => {
+    return -(plannedDeficit * 30) / 7700;
+  }, [plannedDeficit]);
+
+  const plannedTrend = useMemo(() => {
+    if (Math.abs(plannedDeficit) <= 100) return 'maintaining';
+    return plannedDeficit > 0 ? 'losing' : 'gaining';
+  }, [plannedDeficit]);
+
+  // Unified Forecast selectors based on active Mode
+  const displayAvgCalories = forecastMode === 'actual' 
+    ? (forecast ? forecast.averageDailyCalories : 0) 
+    : (profile?.calorieTarget ?? 2000);
+
+  const displayWeeklyChange = forecastMode === 'actual' 
+    ? (forecast ? forecast.projectedWeeklyChange : 0) 
+    : plannedWeeklyChange;
+
+  const displayMonthlyChange = forecastMode === 'actual' 
+    ? (forecast ? forecast.projectedMonthlyChange : 0) 
+    : plannedMonthlyChange;
+
+  const displayTrend = forecastMode === 'actual' 
+    ? (forecast ? forecast.trend : 'maintaining') 
+    : plannedTrend;
+
+  const displaySeries = forecastMode === 'actual' 
+    ? projectedSeries 
+    : plannedProjectedSeries;
+
+  const displayNote = forecastMode === 'actual' 
+    ? (forecast ? forecast.confidenceNote : '') 
+    : `Based on your configured daily target (${profile?.calorieTarget} kcal) vs maintenance (${tdee} kcal).`;
 
   // V2 Trend alerts
   const trendAlerts = useMemo(() => {
@@ -304,34 +366,68 @@ export default function AnalyticsScreen() {
       {/* ── Calorie Forecast ─────────────────────────────────────────── */}
       {forecast && (
         <div className="glass-card mb-md">
-          <div className="section-header">
-            <span className="section-header__title">📈 7-Day Weight Forecast</span>
-            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: forecast.trend === 'losing' ? 'var(--accent)' : forecast.trend === 'gaining' ? 'var(--accent3)' : 'var(--accent2)' }}>
-              {forecast.trend === 'losing' ? '↓ Losing' : forecast.trend === 'gaining' ? '↑ Gaining' : '→ Stable'}
+          <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="section-header__title">📈 Weight Forecast</span>
+            <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-glass-strong)', padding: '2px', borderRadius: '4px' }}>
+              <button
+                onClick={() => setForecastMode('actual')}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '0.6875rem',
+                  border: 'none',
+                  borderRadius: '4px',
+                  background: forecastMode === 'actual' ? 'var(--accent)' : 'transparent',
+                  color: forecastMode === 'actual' ? '#0a1a12' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontWeight: forecastMode === 'actual' ? 700 : 400
+                }}
+              >
+                Actual (Logs)
+              </button>
+              <button
+                onClick={() => setForecastMode('planned')}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '0.6875rem',
+                  border: 'none',
+                  borderRadius: '4px',
+                  background: forecastMode === 'planned' ? 'var(--accent)' : 'transparent',
+                  color: forecastMode === 'planned' ? '#0a1a12' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontWeight: forecastMode === 'planned' ? 700 : 400
+                }}
+              >
+                Target (Goal)
+              </button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Trend: <strong style={{ color: displayTrend === 'losing' ? 'var(--accent)' : displayTrend === 'gaining' ? 'var(--accent3)' : 'var(--accent2)', textTransform: 'capitalize' }}>{displayTrend}</strong>
             </span>
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
             <div style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Avg Daily</div>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: 'var(--accent)' }}>{Math.round(forecast.averageDailyCalories)} kcal</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{forecastMode === 'actual' ? 'Avg Daily' : 'Planned Target'}</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: 'var(--accent)' }}>{Math.round(displayAvgCalories)} kcal</div>
             </div>
             <div style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)' }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Proj. 7d</div>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: forecast.projectedWeeklyChange < 0 ? 'var(--accent)' : 'var(--accent3)' }}>
-                {forecast.projectedWeeklyChange > 0 ? '+' : ''}{forecast.projectedWeeklyChange.toFixed(2)} kg
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: displayWeeklyChange < 0 ? 'var(--accent)' : 'var(--accent3)' }}>
+                {displayWeeklyChange > 0 ? '+' : ''}{displayWeeklyChange.toFixed(2)} kg
               </div>
             </div>
             <div style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)' }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Proj. 30d</div>
               <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: 'var(--accent2)' }}>
-                {forecast.projectedMonthlyChange > 0 ? '+' : ''}{forecast.projectedMonthlyChange.toFixed(1)} kg
+                {displayMonthlyChange > 0 ? '+' : ''}{displayMonthlyChange.toFixed(1)} kg
               </div>
             </div>
           </div>
-          {projectedSeries.length > 0 && (
+          {displaySeries.length > 0 && (
             <div style={{ height: 140 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={projectedSeries}>
+                <LineChart data={displaySeries}>
                   <XAxis dataKey="day" tick={{ fill: '#9a9ab0', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} hide />
                   <Tooltip contentStyle={customTooltipStyle} formatter={(v: any) => [typeof v === 'number' ? `${v.toFixed(1)} kg` : `${v} kg`, 'Weight']} />
@@ -341,7 +437,7 @@ export default function AnalyticsScreen() {
             </div>
           )}
           <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 'var(--space-sm)', textAlign: 'center' }}>
-            {forecast.confidenceNote}
+            {displayNote}
           </div>
         </div>
       )}

@@ -16,11 +16,12 @@ import RestTimer from '../components/RestTimer';
 
 export default function WorkoutScreen() {
   const today = getTodayStr();
-  const todayWorkouts = useLiveQuery(() => db.workouts.where('date').equals(today).toArray(), [today]);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const todayWorkouts = useLiveQuery(() => db.workouts.where('date').equals(selectedDate).toArray(), [selectedDate]);
   const recentWorkouts = useLiveQuery(() => db.workouts.toCollection().reverse().limit(30).toArray());
   const allWorkouts = useLiveQuery(() => db.workouts.toArray());
-  const todaySleep = useLiveQuery(() => db.sleepLogs.where('date').equals(today).first(), [today]);
-  const todayMeals = useLiveQuery(() => db.meals.where('date').equals(today).toArray(), [today]);
+  const todaySleep = useLiveQuery(() => db.sleepLogs.where('date').equals(selectedDate).first(), [selectedDate]);
+  const todayMeals = useLiveQuery(() => db.meals.where('date').equals(selectedDate).toArray(), [selectedDate]);
   const profile = useLiveQuery(() => db.userProfiles.toCollection().first());
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -154,7 +155,7 @@ export default function WorkoutScreen() {
       exercise: selectedExercise.name,
       category: selectedExercise.category,
       sets: isCardio ? [] : sets,
-      date: today,
+      date: selectedDate,
       createdAt: new Date().toISOString(),
     };
 
@@ -179,7 +180,7 @@ export default function WorkoutScreen() {
         maxWeight,
         maxReps,
         estimated1RM: Math.round(best1RM * 10) / 10,
-        date: today,
+        date: selectedDate,
         createdAt: new Date().toISOString(),
       });
       setToast(`🎉 New Personal Record for ${selectedExercise.name}!`);
@@ -200,7 +201,7 @@ export default function WorkoutScreen() {
   }, [
     selectedExercise, 
     sets, 
-    today, 
+    selectedDate, 
     allWorkouts, 
     cardioDuration, 
     cardioSpeed, 
@@ -277,8 +278,22 @@ export default function WorkoutScreen() {
     <div className="animate-in">
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
-      <div className="page-header">
-        <h1 className="page-header__title">Workout Tracker</h1>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+        <h1 className="page-header__title" style={{ margin: 0 }}>Workout Tracker</h1>
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value || getTodayStr())}
+          style={{
+            padding: '6px 12px',
+            fontSize: '0.875rem',
+            background: 'var(--bg-glass-strong)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer'
+          }}
+        />
       </div>
 
       {/* Today Stats */}
@@ -300,7 +315,7 @@ export default function WorkoutScreen() {
       {/* View Toggle */}
       <div className="tab-switcher">
         <button className={`tab-switcher__tab ${viewMode === 'today' ? 'active' : ''}`} onClick={() => setViewMode('today')}>
-          Today
+          {selectedDate === today ? 'Today' : formatDateShort(selectedDate)}
         </button>
         <button className={`tab-switcher__tab ${viewMode === 'templates' ? 'active' : ''}`} onClick={() => setViewMode('templates')}>
           Templates
@@ -315,8 +330,8 @@ export default function WorkoutScreen() {
           {(!todayWorkouts || todayWorkouts.length === 0) ? (
             <div className="empty-state">
               <div className="empty-state__icon">🏋️</div>
-              <div className="empty-state__title">No workouts today</div>
-              <div className="empty-state__text">Start logging your exercises!</div>
+              <div className="empty-state__title">No workouts logged</div>
+              <div className="empty-state__text">Start logging your exercises for this date!</div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>

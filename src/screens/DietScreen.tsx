@@ -6,7 +6,7 @@ import { searchFoods, calculateNutrition, type FoodItem } from '../db/foodDataba
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import MacroBar from '../components/MacroBar';
-import { getTodayStr } from '../utils/helpers';
+import { getTodayStr, formatDate } from '../utils/helpers';
 
 const OCRScanner = lazy(() => import('../components/OCRScanner'));
 
@@ -20,8 +20,9 @@ const MEAL_ICONS: Record<string, string> = {
 
 export default function DietScreen() {
   const today = getTodayStr();
+  const [selectedDate, setSelectedDate] = useState(today);
   const profile = useLiveQuery(() => db.userProfiles.toCollection().first());
-  const todayMeals = useLiveQuery(() => db.meals.where('date').equals(today).toArray(), [today]);
+  const todayMeals = useLiveQuery(() => db.meals.where('date').equals(selectedDate).toArray(), [selectedDate]);
 
   const [activeMealType, setActiveMealType] = useState<typeof MEAL_TYPES[number]>('breakfast');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -77,7 +78,7 @@ export default function DietScreen() {
       protein: Math.round(nutrition.protein * 10) / 10,
       carbs: Math.round(nutrition.carbs * 10) / 10,
       fats: Math.round(nutrition.fats * 10) / 10,
-      date: today,
+      date: selectedDate,
       createdAt: new Date().toISOString(),
     });
 
@@ -86,7 +87,7 @@ export default function DietScreen() {
     setSearchQuery('');
     setServingG('');
     setShowAddModal(false);
-  }, [selectedFood, servingG, activeMealType, today]);
+  }, [selectedFood, servingG, activeMealType, selectedDate]);
 
   const handleAddCustom = useCallback(async () => {
     if (!customName.trim()) return;
@@ -100,7 +101,7 @@ export default function DietScreen() {
       protein: Math.round((parseFloat(customProtein) || 0) * 10) / 10,
       carbs: Math.round((parseFloat(customCarbs) || 0) * 10) / 10,
       fats: Math.round((parseFloat(customFats) || 0) * 10) / 10,
-      date: today,
+      date: selectedDate,
       createdAt: new Date().toISOString(),
     });
 
@@ -112,7 +113,7 @@ export default function DietScreen() {
     setCustomFats('');
     setCustomQuantity('100');
     setShowCustomModal(false);
-  }, [customName, customCalories, customProtein, customCarbs, customFats, customQuantity, activeMealType, today]);
+  }, [customName, customCalories, customProtein, customCarbs, customFats, customQuantity, activeMealType, selectedDate]);
 
   const handleDeleteMeal = useCallback(async (id: number) => {
     await syncEngine.deleteMeal(id);
@@ -136,15 +137,29 @@ export default function DietScreen() {
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
       {/* Header */}
-      <div className="page-header">
-        <h1 className="page-header__title">Diet Planner</h1>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+        <h1 className="page-header__title" style={{ margin: 0 }}>Diet Planner</h1>
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value || getTodayStr())}
+          style={{
+            padding: '6px 12px',
+            fontSize: '0.875rem',
+            background: 'var(--bg-glass-strong)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer'
+          }}
+        />
       </div>
 
       {/* Daily Summary */}
       <div className="glass-card mb-md">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
           <div>
-            <div className="text-caption">Today's Intake</div>
+            <div className="text-caption">{selectedDate === today ? "Today's" : formatDate(selectedDate)} Intake</div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 800 }}>
               <span style={{ color: 'var(--accent)' }}>{totalCalories}</span>
               <span className="text-muted" style={{ fontSize: '1rem', fontWeight: 400 }}> / {profile.calorieTarget} kcal</span>
