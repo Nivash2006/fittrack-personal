@@ -38,6 +38,10 @@ export default function WorkoutScreen() {
   const [newCustomName, setNewCustomName] = useState('');
   const [newCustomCategory, setNewCustomCategory] = useState<Exercise['category']>('cardio');
 
+  // History search and repeat states
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historyFilterCategory, setHistoryFilterCategory] = useState('');
+
   // Cardio specific states
   const [cardioDuration, setCardioDuration] = useState<number>(30);
   const [cardioSpeed, setCardioSpeed] = useState<string>('');
@@ -263,12 +267,46 @@ export default function WorkoutScreen() {
     setToast('Workout removed');
   }, []);
 
-  // Group history by date
-  const historyByDate = (recentWorkouts ?? []).reduce<Record<string, typeof recentWorkouts>>((acc, w) => {
-    if (!acc[w.date]) acc[w.date] = [];
-    acc[w.date]!.push(w);
-    return acc;
-  }, {});
+  // Repeat workout handler
+  const handleRepeatWorkout = useCallback(async (workout: any) => {
+    const repeatData: any = {
+      exercise: workout.exercise,
+      category: workout.category,
+      sets: workout.sets.map((s: any) => ({ ...s })),
+      date: selectedDate,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (workout.category === 'cardio') {
+      if (workout.duration !== undefined) repeatData.duration = workout.duration;
+      if (workout.speed !== undefined) repeatData.speed = workout.speed;
+      if (workout.incline !== undefined) repeatData.incline = workout.incline;
+      if (workout.distance !== undefined) repeatData.distance = workout.distance;
+      if (workout.resistanceLevel !== undefined) repeatData.resistanceLevel = workout.resistanceLevel;
+      if (workout.strideCadence !== undefined) repeatData.strideCadence = workout.strideCadence;
+    }
+
+    await db.workouts.add(repeatData);
+    setToast(`Repeated workout: ${workout.exercise}!`);
+  }, [selectedDate]);
+
+  // Group history by date with filtering
+  const historyByDate = useMemo(() => {
+    let list = recentWorkouts ?? [];
+    if (historySearchQuery.trim()) {
+      const q = historySearchQuery.toLowerCase();
+      list = list.filter(w => w.exercise.toLowerCase().includes(q));
+    }
+    if (historyFilterCategory) {
+      list = list.filter(w => w.category === historyFilterCategory);
+    }
+
+    return list.reduce<Record<string, typeof recentWorkouts>>((acc, w) => {
+      if (!acc[w.date]) acc[w.date] = [];
+      acc[w.date]!.push(w);
+      return acc;
+    }, {});
+  }, [recentWorkouts, historySearchQuery, historyFilterCategory]);
 
   const totalVolume = (todayWorkouts ?? []).reduce((sum, w) => {
     return sum + w.sets.reduce((s, set) => s + set.reps * set.weight, 0);
@@ -444,11 +482,41 @@ export default function WorkoutScreen() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          {/* History Search & Filters */}
+          <div className="glass-card mb-sm" style={{ padding: 'var(--space-md)' }}>
+            <div className="search-bar mb-sm">
+              <span className="search-bar__icon">🔍</span>
+              <input
+                type="text"
+                placeholder="Search history by exercise name..."
+                value={historySearchQuery}
+                onChange={(e) => setHistorySearchQuery(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button 
+                className={`chip ${!historyFilterCategory ? 'active' : ''}`} 
+                onClick={() => setHistoryFilterCategory('')}
+              >
+                All
+              </button>
+              {EXERCISE_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  className={`chip ${historyFilterCategory === cat ? 'active' : ''}`}
+                  onClick={() => setHistoryFilterCategory(cat)}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {Object.keys(historyByDate).length === 0 ? (
             <div className="empty-state">
               <div className="empty-state__icon">📋</div>
-              <div className="empty-state__title">No workout history</div>
-              <div className="empty-state__text">Your logged workouts will appear here</div>
+              <div className="empty-state__title">No workout history found</div>
+              <div className="empty-state__text">Try adjusting your filters or search keywords.</div>
             </div>
           ) : (
             Object.entries(historyByDate).map(([date, workouts]) => (
@@ -458,7 +526,17 @@ export default function WorkoutScreen() {
                   <div key={w.id} className="workout-card">
                     <div className="workout-card__header">
                       <span className="workout-card__exercise">{w.exercise}</span>
-                      <span className="workout-card__category">{w.category}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                        <span className="workout-card__category">{w.category}</span>
+                        <button
+                          className="btn btn-ghost"
+                          onClick={() => handleRepeatWorkout(w)}
+                          style={{ padding: '2px 8px', color: 'var(--accent)', fontSize: '0.75rem', background: 'var(--accent-dim)', border: '1px solid rgba(0,230,138,0.15)', borderRadius: '4px' }}
+                          title="Repeat this workout today"
+                        >
+                          🔁 Repeat
+                        </button>
+                      </div>
                     </div>
                     {renderWorkoutBadges(w)}
                   </div>

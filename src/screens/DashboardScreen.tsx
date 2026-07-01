@@ -32,6 +32,50 @@ export default function DashboardScreen() {
   const [newWeight, setNewWeight] = useState('');
   const [toast, setToast] = useState<string | null>(null);
 
+  // Reminders configurations & alerts
+  const [reminders, setReminders] = useState<{
+    waterEnabled: boolean;
+    waterInterval: number;
+    sleepEnabled: boolean;
+    sleepTime: string;
+  }>(() => {
+    const saved = localStorage.getItem('fittrack_reminders');
+    return saved ? JSON.parse(saved) : {
+      waterEnabled: true,
+      waterInterval: 2,
+      sleepEnabled: true,
+      sleepTime: '22:00',
+    };
+  });
+
+  const [showWaterReminder, setShowWaterReminder] = useState(false);
+  const [showSleepReminder, setShowSleepReminder] = useState(false);
+  const [lastWaterNotifTime, setLastWaterNotifTime] = useState<number>(0);
+  const [lastSleepNotifDate, setLastSleepNotifDate] = useState<string>('');
+
+  const triggerNativeNotification = useCallback((title: string, body: string) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(title, { body });
+      } catch (e) {
+        console.warn('Native notification failed', e);
+      }
+    }
+  }, []);
+
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window) {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setToast('🔔 Browser notifications enabled!');
+      } else {
+        setToast('⚠️ Notification permission denied.');
+      }
+    } else {
+      setToast('⚠️ Notifications are not supported.');
+    }
+  };
+
   // V2 memoized computations
   const nextMealType = useMemo(() => {
     const hour = new Date().getHours();
@@ -82,8 +126,77 @@ export default function DashboardScreen() {
   }, [todayWater]);
 
   useEffect(() => {
-    if (todaySleep) setSleepHours(String(todaySleep.hours));
+    if (todaySleep) {
+      setSleepHours(String(todaySleep.hours));
+    } else {
+      setSleepHours('');
+    }
   }, [todaySleep]);
+
+  useEffect(() => {
+    localStorage.setItem('fittrack_reminders', JSON.stringify(reminders));
+  }, [reminders]);
+
+  useEffect(() => {
+    const checkReminders = () => {
+      const now = new Date();
+      const currentHour = now.getHours();
+
+      // Water reminder check (only between 8 AM and 10 PM)
+      if (reminders.waterEnabled && currentHour >= 8 && currentHour < 22) {
+        let lastWaterTime = new Date();
+        lastWaterTime.setHours(8, 0, 0, 0);
+
+        if (todayWater && todayWater.length > 0) {
+          const sortedWater = [...todayWater].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          const lastLog = sortedWater[sortedWater.length - 1];
+          if (lastLog.createdAt) {
+            lastWaterTime = new Date(lastLog.createdAt);
+          }
+        }
+
+        const diffMs = now.getTime() - lastWaterTime.getTime();
+        const diffHrs = diffMs / (1000 * 60 * 60);
+
+        if (diffHrs >= reminders.waterInterval) {
+          setShowWaterReminder(true);
+          // Throttle notification triggers (once every 1 hour max)
+          if (now.getTime() - lastWaterNotifTime > 60 * 60 * 1000) {
+            triggerNativeNotification('💧 Stay Hydrated!', `It's been over ${reminders.waterInterval} hours since your last drink of water.`);
+            setLastWaterNotifTime(now.getTime());
+          }
+        } else {
+          setShowWaterReminder(false);
+        }
+      } else {
+        setShowWaterReminder(false);
+      }
+
+      // Sleep reminder check
+      if (reminders.sleepEnabled) {
+        const [bedHour, bedMin] = reminders.sleepTime.split(':').map(Number);
+        const bedTime = new Date();
+        bedTime.setHours(bedHour, bedMin, 0, 0);
+
+        if (now.getTime() >= bedTime.getTime() && (!todaySleep || todaySleep.hours === 0)) {
+          setShowSleepReminder(true);
+          const todayStr = getTodayStr();
+          if (lastSleepNotifDate !== todayStr) {
+            triggerNativeNotification('😴 Bedtime Reminder', `It's past your bedtime (${reminders.sleepTime}). Time to log your sleep and rest!`);
+            setLastSleepNotifDate(todayStr);
+          }
+        } else {
+          setShowSleepReminder(false);
+        }
+      } else {
+        setShowSleepReminder(false);
+      }
+    };
+
+    checkReminders();
+    const interval = setInterval(checkReminders, 30000);
+    return () => clearInterval(interval);
+  }, [todayWater, todaySleep, reminders, lastWaterNotifTime, lastSleepNotifDate, triggerNativeNotification]);
 
   const totalCalories = todayMeals?.reduce((s, m) => s + m.calories, 0) ?? 0;
   const totalProtein = todayMeals?.reduce((s, m) => s + m.protein, 0) ?? 0;
@@ -193,11 +306,55 @@ export default function DashboardScreen() {
 
   return (
     <div className="animate-in">
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
       {/* Header */}
       <div className="page-header">
         <div className="page-header__greeting">{getGreeting()}, {profile.name} 👋</div>
         <h1 className="page-header__title">Dashboard</h1>
       </div>
+
+      {/* Reminder Alerts */}
+      {showWaterReminder && (
+        <div className="glass-card mb-md animate-in" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+          <div style={{ fontSize: '1.5rem' }}>💧</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-primary)' }}>Stay Hydrated!</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>It has been over {reminders.waterInterval} hours since your last glass of water.</div>
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={async () => {
+              await addWaterGlass();
+              setToast('💧 250ml water logged!');
+              setShowWaterReminder(false);
+            }}
+            style={{ padding: '6px 12px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+          >
+            + 250ml
+          </button>
+        </div>
+      )}
+
+      {showSleepReminder && (
+        <div className="glass-card mb-md animate-in" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', background: 'rgba(167, 139, 250, 0.1)', border: '1px solid rgba(167, 139, 250, 0.2)' }}>
+          <div style={{ fontSize: '1.5rem' }}>😴</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-primary)' }}>Bedtime Reminder</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>It's past your bedtime ({reminders.sleepTime}). Make sure to log your sleep and rest!</div>
+          </div>
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              const el = document.getElementById('sleep-card');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+            style={{ padding: '6px 12px', fontSize: '0.75rem', whiteSpace: 'nowrap', background: 'rgba(167, 139, 250, 0.2)', color: '#c084fc', border: '1px solid rgba(167, 139, 250, 0.3)' }}
+          >
+            Log Sleep
+          </button>
+        </div>
+      )}
 
       {/* Health Insights Carousel */}
       <InsightsPanel />
@@ -318,7 +475,7 @@ export default function DashboardScreen() {
         </div>
 
         {/* Dedicated Sleep Card */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div id="sleep-card" className="glass-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <div className="section-header" style={{ marginBottom: '6px' }}>
             <span className="section-header__title" style={{ fontSize: '0.875rem' }}>😴 Sleep Tracker</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -525,6 +682,73 @@ export default function DashboardScreen() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* ── Reminders Configuration ───────────────────────────────────── */}
+      <div className="glass-card mb-md">
+        <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="section-header__title">🔔 Reminder Settings</span>
+          <button 
+            className="btn btn-ghost" 
+            onClick={requestNotificationPermission} 
+            style={{ padding: '2px 8px', fontSize: '0.75rem', color: 'var(--accent)' }}
+          >
+            Enable Push
+          </button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', marginTop: 'var(--space-sm)' }}>
+          {/* Water Reminder config */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>💧 Water Reminders</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Remind me to drink water between 8 AM and 10 PM.</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+              {reminders.waterEnabled && (
+                <select
+                  value={reminders.waterInterval}
+                  onChange={(e) => setReminders(prev => ({ ...prev, waterInterval: Number(e.target.value) }))}
+                  style={{ padding: '4px 8px', fontSize: '0.75rem', background: 'var(--bg-glass-strong)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '4px' }}
+                >
+                  <option value={1}>Every Hour</option>
+                  <option value={2}>Every 2 Hours</option>
+                  <option value={3}>Every 3 Hours</option>
+                  <option value={4}>Every 4 Hours</option>
+                </select>
+              )}
+              <input
+                type="checkbox"
+                checked={reminders.waterEnabled}
+                onChange={(e) => setReminders(prev => ({ ...prev, waterEnabled: e.target.checked }))}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+            </div>
+          </div>
+
+          {/* Sleep Reminder config */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>😴 Sleep Reminders</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Remind me to sleep if not logged by bedtime.</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+              {reminders.sleepEnabled && (
+                <input
+                  type="time"
+                  value={reminders.sleepTime}
+                  onChange={(e) => setReminders(prev => ({ ...prev, sleepTime: e.target.value }))}
+                  style={{ padding: '4px 8px', fontSize: '0.75rem', background: 'var(--bg-glass-strong)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '4px', cursor: 'pointer' }}
+                />
+              )}
+              <input
+                type="checkbox"
+                checked={reminders.sleepEnabled}
+                onChange={(e) => setReminders(prev => ({ ...prev, sleepEnabled: e.target.checked }))}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Manual Weight Log Modal */}

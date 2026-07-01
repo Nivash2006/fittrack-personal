@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/database';
 import { getLast7Days, getLast30Days, getDayName, formatDateShort, calculateBMR, calculateTDEE } from '../utils/helpers';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, ReferenceLine } from 'recharts';
 import { calculateHealthScore, getBandColor, type HealthScoreResult } from '../utils/healthScore';
 import { forecastFromHistory, getProjectedWeightSeries } from '../utils/calorieForecast';
 
@@ -95,6 +95,16 @@ export default function AnalyticsScreen() {
       return { day: getDayName(date), steps: log?.count ?? 0 };
     });
   }, [allSteps, last7]);
+
+  // Water data
+  const waterData = useMemo(() => {
+    if (!allWater) return [];
+    return last7.map((date) => {
+      const logs = allWater.filter((w) => w.date === date);
+      const totalAmount = logs.reduce((sum, log) => sum + log.amount, 0);
+      return { day: getDayName(date), amount: totalAmount };
+    });
+  }, [allWater, last7]);
 
   // Health score
   const healthScore = useMemo<HealthScoreResult | null>(() => {
@@ -617,19 +627,46 @@ export default function AnalyticsScreen() {
         </div>
       </div>
 
-      {/* Sleep Chart */}
+      {/* Hydration Chart */}
       <div className="glass-card mb-md">
-        <div className="section-header">
-          <span className="section-header__title">😴 Sleep (7 Days)</span>
+        <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="section-header__title">💧 Hydration (7 Days)</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Target: {profile?.waterTarget ?? 2000} ml</span>
         </div>
         <div className="chart-container" style={{ height: 160 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={sleepData}>
+            <BarChart data={waterData}>
               <XAxis dataKey="day" tick={{ fill: '#9a9ab0', fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis hide />
-              <Tooltip contentStyle={customTooltipStyle} />
-              <Bar dataKey="hours" fill="#a78bfa" radius={[6, 6, 0, 0]} />
+              <YAxis domain={[0, 'dataMax + 500']} hide />
+              <Tooltip contentStyle={customTooltipStyle} formatter={(v: any) => [`${v} ml`, 'Water']} />
+              <Bar dataKey="amount" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+              <ReferenceLine y={profile?.waterTarget ?? 2000} stroke="var(--accent)" strokeDasharray="3 3" label={{ value: 'Target', fill: 'var(--accent)', fontSize: 10, position: 'insideBottomRight' }} />
             </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Sleep Chart */}
+      <div className="glass-card mb-md">
+        <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="section-header__title">😴 Sleep (7 Days)</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Target: 8 hrs</span>
+        </div>
+        <div className="chart-container" style={{ height: 160 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={sleepData}>
+              <defs>
+                <linearGradient id="sleepGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#a78bfa" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="day" tick={{ fill: '#9a9ab0', fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 'dataMax + 2']} hide />
+              <Tooltip contentStyle={customTooltipStyle} formatter={(v: any) => [`${v} hrs`, 'Sleep']} />
+              <Area type="monotone" dataKey="hours" stroke="#a78bfa" fill="url(#sleepGrad)" strokeWidth={2.5} />
+              <ReferenceLine y={8} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Target', fill: '#ef4444', fontSize: 10, position: 'insideBottomRight' }} />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>

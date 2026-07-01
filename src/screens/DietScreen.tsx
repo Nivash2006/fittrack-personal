@@ -307,6 +307,31 @@ export default function DietScreen() {
                 onChange={(e) => setServingG(e.target.value)}
                 min="1"
               />
+              <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                {[0.5, 1, 1.5, 2].map((mult) => {
+                  const targetGrams = String(Math.round(selectedFood.defaultServingG * mult));
+                  return (
+                    <button
+                      key={mult}
+                      className="chip"
+                      type="button"
+                      onClick={() => setServingG(targetGrams)}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '0.75rem',
+                        background: 'var(--bg-glass-strong)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                        color: servingG === targetGrams ? 'var(--accent)' : 'var(--text-secondary)',
+                        borderColor: servingG === targetGrams ? 'var(--accent)' : 'var(--border-subtle)',
+                      }}
+                    >
+                      {mult === 0.5 ? '½' : mult} Serving ({targetGrams}g)
+                    </button>
+                  );
+                })}
+              </div>
               <div className="text-small text-muted mt-sm">
                 Suggested: {selectedFood.defaultServingG}g ({selectedFood.servingUnit})
               </div>
