@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import MacroBar from '../components/MacroBar';
 import { getTodayStr, formatDate } from '../utils/helpers';
+import DateStrip from '../components/DateStrip';
 
 const OCRScanner = lazy(() => import('../components/OCRScanner'));
 
@@ -20,7 +21,16 @@ const MEAL_ICONS: Record<string, string> = {
 
 export default function DietScreen() {
   const today = getTodayStr();
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const saved = localStorage.getItem('fittrack_selected_date');
+    return saved && /^\d{4}-\d{2}-\d{2}$/.test(saved) ? saved : today;
+  });
+
+  const handleDateChange = (date: string) => {
+    setSelectedDate(date);
+    localStorage.setItem('fittrack_selected_date', date);
+  };
+
   const profile = useLiveQuery(() => db.userProfiles.toCollection().first());
   const todayMeals = useLiveQuery(() => db.meals.where('date').equals(selectedDate).toArray(), [selectedDate]);
 
@@ -137,23 +147,12 @@ export default function DietScreen() {
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
       {/* Header */}
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+      <div className="page-header" style={{ marginBottom: 'var(--space-xs)' }}>
         <h1 className="page-header__title" style={{ margin: 0 }}>Diet Planner</h1>
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value || getTodayStr())}
-          style={{
-            padding: '6px 12px',
-            fontSize: '0.875rem',
-            background: 'var(--bg-glass-strong)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer'
-          }}
-        />
       </div>
+
+      {/* Sliding Date Strip */}
+      <DateStrip selectedDate={selectedDate} onChange={handleDateChange} />
 
       {/* Daily Summary */}
       <div className="glass-card mb-md">

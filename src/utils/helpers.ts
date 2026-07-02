@@ -1,5 +1,12 @@
+export function formatDateLocal(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function getTodayStr(): string {
-  return new Date().toISOString().split('T')[0];
+  return formatDateLocal(new Date());
 }
 
 export function formatDate(dateStr: string): string {

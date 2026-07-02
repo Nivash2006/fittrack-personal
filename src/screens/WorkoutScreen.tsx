@@ -13,10 +13,19 @@ import {
   WORKOUT_TEMPLATES 
 } from '../utils/workoutCoach';
 import RestTimer from '../components/RestTimer';
+import DateStrip from '../components/DateStrip';
 
 export default function WorkoutScreen() {
   const today = getTodayStr();
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const saved = localStorage.getItem('fittrack_selected_date');
+    return saved && /^\d{4}-\d{2}-\d{2}$/.test(saved) ? saved : today;
+  });
+
+  const handleDateChange = (date: string) => {
+    setSelectedDate(date);
+    localStorage.setItem('fittrack_selected_date', date);
+  };
   const todayWorkouts = useLiveQuery(() => db.workouts.where('date').equals(selectedDate).toArray(), [selectedDate]);
   const recentWorkouts = useLiveQuery(() => db.workouts.toCollection().reverse().limit(30).toArray());
   const allWorkouts = useLiveQuery(() => db.workouts.toArray());
@@ -316,23 +325,12 @@ export default function WorkoutScreen() {
     <div className="animate-in">
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+      <div className="page-header" style={{ marginBottom: 'var(--space-xs)' }}>
         <h1 className="page-header__title" style={{ margin: 0 }}>Workout Tracker</h1>
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value || getTodayStr())}
-          style={{
-            padding: '6px 12px',
-            fontSize: '0.875rem',
-            background: 'var(--bg-glass-strong)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer'
-          }}
-        />
       </div>
+
+      {/* Sliding Date Strip */}
+      <DateStrip selectedDate={selectedDate} onChange={handleDateChange} />
 
       {/* Today Stats */}
       <div className="stats-grid mb-md">
