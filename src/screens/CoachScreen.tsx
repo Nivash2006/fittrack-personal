@@ -103,7 +103,7 @@ export default function CoachScreen() {
     return `You are "AlphaCoach", a personal AI fitness trainer and nutritionist for the FitTrack Personal app.
 You have access to the user's profile and logging metrics for today.
 User Profile:
-- Name: ${profile.name}
+- Name: User (Redacted for Privacy Shield)
 - Age: ${profile.age}, Gender: ${profile.gender}
 - Height: ${profile.heightCm} cm, Weight: ${profile.weightKg} kg
 - Activity Level: ${profile.activityLevel}
@@ -373,6 +373,30 @@ Please set up your AI API Key in the **Supabase Dashboard** (secrets manager) as
           >
             ⚙️ Setup Guide
           </button>
+        </div>
+      </div>
+
+      {/* Privacy & Key Expiration Warnings */}
+      <div style={{
+        background: 'rgba(255, 179, 71, 0.05)',
+        border: '1px solid rgba(255, 179, 71, 0.15)',
+        padding: '8px 12px',
+        borderRadius: 'var(--radius-sm)',
+        marginBottom: 'var(--space-md)',
+        fontSize: '0.75rem',
+        lineHeight: 1.4,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px'
+      }}>
+        <div style={{ fontWeight: 700, color: '#ffb347', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span>⏰</span> Key Expiration & Privacy Reminder
+        </div>
+        <div style={{ color: 'var(--text-secondary)' }}>
+          Your active Nvidia NIM key is configured to expire on **January 21, 2027** (in 6 months).
+        </div>
+        <div style={{ color: 'var(--accent)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+          <span>🔒</span> PII Privacy Shield Active: Full Name and Email are automatically redacted.
         </div>
       </div>
 
