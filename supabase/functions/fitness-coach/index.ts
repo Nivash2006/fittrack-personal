@@ -26,31 +26,42 @@ Deno.serve(async (req) => {
     let reply = '';
 
     if (nvidiaKey) {
-      // 1. CALL NVIDIA NIM API (OpenAI-compatible format)
-      const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${nvidiaKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: nvidiaModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages.map((m: any) => ({
-              role: m.role === 'model' ? 'assistant' : 'user',
-              content: m.content,
-            })),
-            { role: 'user', content: userMessage },
-          ],
-          temperature: 0.5,
-          max_tokens: 1024,
-        }),
-      });
+      // 1. CALL NVIDIA NIM API (OpenAI-compatible format with self-healing fallback)
+      const fetchNvidia = async (modelName: string) => {
+        return await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${nvidiaKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...messages.map((m: any) => ({
+                role: m.role === 'model' ? 'assistant' : 'user',
+                content: m.content,
+              })),
+              { role: 'user', content: userMessage },
+            ],
+            temperature: 0.5,
+            max_tokens: 1024,
+          }),
+        });
+      };
+
+      let response = await fetchNvidia(nvidiaModel);
+
+      // Self-healing fallback if primary model is locked or 404s
+      if (!response.ok) {
+        const errText = await response.clone().text();
+        console.warn(`Primary Nvidia model (${nvidiaModel}) failed: ${errText}. Retrying with fallback meta/llama-3.1-8b-instruct...`);
+        response = await fetchNvidia('meta/llama-3.1-8b-instruct');
+      }
 
       if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Nvidia API returned status ${response.status}: ${errText}`);
+        const finalErrText = await response.text();
+        throw new Error(`Nvidia API returned status ${response.status}: ${finalErrText}`);
       }
 
       const data = await response.json();
