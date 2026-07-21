@@ -12,9 +12,9 @@ import AnalyticsScreen from './screens/AnalyticsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import DeficitScreen from './screens/DeficitScreen';
 import NotesScreen from './screens/NotesScreen';
-import CoachScreen from './screens/CoachScreen';
 import BottomNav from './components/BottomNav';
 import Header from './components/Header';
+import AIAssistant from './components/AIAssistant';
 import { syncEngine } from './db/syncEngine';
 
 // Lazy-load heavy screens for better initial bundle size
@@ -144,7 +144,6 @@ function App() {
               <Route path="/" element={<DashboardScreen />} />
               <Route path="/diet" element={<DietScreen />} />
               <Route path="/workout" element={<WorkoutScreen />} />
-              <Route path="/coach" element={<CoachScreen />} />
               <Route path="/analytics" element={<AnalyticsScreen />} />
               <Route path="/deficit" element={<DeficitScreen />} />
               <Route path="/notes" element={<NotesScreen />} />
@@ -155,6 +154,8 @@ function App() {
           </Suspense>
         </div>
         <BottomNav />
+        {/* Floating AI Assistant on every screen */}
+        <AIAssistant />
       </div>
     </BrowserRouter>
   );
