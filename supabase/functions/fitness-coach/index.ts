@@ -16,12 +16,12 @@ Deno.serve(async (req) => {
   try {
     const { systemPrompt, messages, userMessage } = await req.json();
 
-    // Check Supabase environment variables for API keys
-    const openAiKey = Deno.env.get('OPENAI_API_KEY');
-    const geminiKey = Deno.env.get('GEMINI_API_KEY');
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
-    const nvidiaKey = Deno.env.get('NVIDIA_API_KEY');
-    const nvidiaModel = Deno.env.get('NVIDIA_MODEL') || 'nvidia/llama-3.1-nemotron-70b-instruct';
+    // Check Supabase environment variables for API keys (with case-insensitive fallbacks)
+    const openAiKey = Deno.env.get('OPENAI_API_KEY') || Deno.env.get('openai_api_key') || Deno.env.get('OpenAI_API_Key');
+    const geminiKey = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('gemini_api_key') || Deno.env.get('Gemini_API_Key');
+    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY') || Deno.env.get('anthropic_api_key') || Deno.env.get('Anthropic_API_Key');
+    const nvidiaKey = Deno.env.get('NVIDIA_API_KEY') || Deno.env.get('nvidia_api_key') || Deno.env.get('Nvidia_API_Key');
+    const nvidiaModel = Deno.env.get('NVIDIA_MODEL') || Deno.env.get('nvidia_model') || 'nvidia/llama-3.1-nemotron-70b-instruct';
 
     let reply = '';
 
