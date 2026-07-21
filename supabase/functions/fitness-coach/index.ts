@@ -163,6 +163,7 @@ Deno.serve(async (req) => {
       }
     );
   } catch (err: any) {
+    console.error("Deno Function Execution Error:", err.message, err.stack);
     return new Response(
       JSON.stringify({ error: 'FUNCTION_ERROR', message: err.message }),
       {
