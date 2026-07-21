@@ -20,11 +20,43 @@ Deno.serve(async (req) => {
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     const geminiKey = Deno.env.get('GEMINI_API_KEY');
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const nvidiaKey = Deno.env.get('NVIDIA_API_KEY');
+    const nvidiaModel = Deno.env.get('NVIDIA_MODEL') || 'nvidia/llama-3.1-nemotron-70b-instruct';
 
     let reply = '';
 
-    if (openAiKey) {
-      // 1. CALL OPENAI (gpt-4o-mini)
+    if (nvidiaKey) {
+      // 1. CALL NVIDIA NIM API (OpenAI-compatible format)
+      const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${nvidiaKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: nvidiaModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...messages.map((m: any) => ({
+              role: m.role === 'model' ? 'assistant' : 'user',
+              content: m.content,
+            })),
+            { role: 'user', content: userMessage },
+          ],
+          temperature: 0.5,
+          max_tokens: 1024,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Nvidia API returned status ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      reply = data.choices?.[0]?.message?.content || 'No response returned from Nvidia NIM.';
+    } else if (openAiKey) {
+      // 2. CALL OPENAI (gpt-4o-mini)
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -52,7 +84,7 @@ Deno.serve(async (req) => {
       const data = await response.json();
       reply = data.choices?.[0]?.message?.content || 'No response returned from OpenAI.';
     } else if (geminiKey) {
-      // 2. CALL GEMINI (gemini-2.5-flash)
+      // 3. CALL GEMINI (gemini-2.5-flash)
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
         {
@@ -81,7 +113,7 @@ Deno.serve(async (req) => {
       const data = await response.json();
       reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response returned from Gemini.';
     } else if (anthropicKey) {
-      // 3. CALL CLAUDE (claude-3-5-sonnet)
+      // 4. CALL CLAUDE (claude-3-5-sonnet)
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -115,7 +147,7 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           error: 'NO_KEY_CONFIGURED',
-          message: 'No AI API Key is configured in Supabase! Please set OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY inside your Supabase project vault secrets.',
+          message: 'No AI API Key is configured in Supabase! Please set NVIDIA_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY inside your Supabase project vault secrets.',
         }),
         {
           status: 400,

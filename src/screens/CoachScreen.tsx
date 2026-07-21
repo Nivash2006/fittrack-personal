@@ -526,7 +526,7 @@ Please set up your AI API Key in the **Supabase Dashboard** (secrets manager) as
           
           <h4 style={{ color: 'var(--text-primary)', margin: '12px 0 6px 0', fontSize: '0.875rem' }}>Step 1: Set Secret in Supabase Vault</h4>
           <p style={{ margin: '0 0 8px 0' }}>
-            Open your terminal and use the Supabase CLI to set your key (use OpenAI, Gemini, or Claude):
+            Open your terminal and use the Supabase CLI to set your key (use Nvidia, OpenAI, Gemini, or Claude):
           </p>
           <pre style={{
             background: 'rgba(0,0,0,0.4)',
@@ -537,6 +537,8 @@ Please set up your AI API Key in the **Supabase Dashboard** (secrets manager) as
             color: 'var(--accent2)',
             fontFamily: 'monospace'
           }}>
+            # For Nvidia Nemotron Keys:<br/>
+            supabase secrets set NVIDIA_API_KEY=nvapi-...<br/><br/>
             # For OpenAI API Keys:<br/>
             supabase secrets set OPENAI_API_KEY=sk-proj-...<br/><br/>
             # OR for Google Gemini Keys:<br/>
