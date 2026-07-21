@@ -195,6 +195,33 @@ export default function DeviceConnectionCard({ onManualLogClick }: DeviceConnect
         </div>
       )}
 
+      {/* Bluetooth Connection Warning Guide */}
+      <div style={{
+        marginTop: 'var(--space-md)',
+        padding: 'var(--space-sm)',
+        background: 'var(--bg-glass-strong)',
+        borderRadius: 'var(--radius-sm)',
+        border: '1px solid var(--border-subtle)',
+        fontSize: '0.75rem',
+        lineHeight: 1.4,
+        color: 'var(--text-secondary)'
+      }}>
+        <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', marginBottom: '4px' }}>
+          <span>💡</span> Connection Troubleshooting
+        </div>
+        <ul style={{ margin: 0, paddingLeft: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <li>
+            <strong style={{ color: 'var(--text-primary)' }}>Close official scale apps:</strong> Weight scales can only connect to one app at a time. If the official scale app is open or running in the background, it will block this app. **Force close the scale app** and try again!
+          </li>
+          <li>
+            <strong style={{ color: 'var(--text-primary)' }}>Re-cycle Bluetooth:</strong> Turn off your Bluetooth, turn it back on, step on the scale to wake it up, and tap Pair.
+          </li>
+          <li>
+            <strong style={{ color: 'var(--text-primary)' }}>Browser support:</strong> Use Google Chrome on Android. On iOS, use the **Bluefy** browser app.
+          </li>
+        </ul>
+      </div>
+
       {/* CSS Pulse Keyframe Animation */}
       <style>{`
         @keyframes pulse {

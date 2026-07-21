@@ -96,13 +96,15 @@ export class BLEManager {
 
       // Web Bluetooth prompt (requires explicit user action)
       const device = await (navigator as any).bluetooth.requestDevice({
-        filters: [
-          { services: [UUIDS.WEIGHT_SERVICE] },
-          { namePrefix: 'AntAlpha' },
-          { namePrefix: 'Scale' },
-          { namePrefix: 'Electronic' },
-        ],
-        optionalServices: [UUIDS.BATTERY_SERVICE, 'device_information'],
+        acceptAllDevices: true,
+        optionalServices: [
+          UUIDS.WEIGHT_SERVICE,
+          '0000181d-0000-1000-8000-00805f9b34fb', // standard weight scale
+          '0000181b-0000-1000-8000-00805f9b34fb', // standard body composition
+          UUIDS.BATTERY_SERVICE,
+          'battery_service',
+          'device_information'
+        ]
       });
 
       if (this.scanTimeout) {

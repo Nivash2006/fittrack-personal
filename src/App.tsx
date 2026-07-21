@@ -12,6 +12,7 @@ import AnalyticsScreen from './screens/AnalyticsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import DeficitScreen from './screens/DeficitScreen';
 import NotesScreen from './screens/NotesScreen';
+import CoachScreen from './screens/CoachScreen';
 import BottomNav from './components/BottomNav';
 import Header from './components/Header';
 import { syncEngine } from './db/syncEngine';
@@ -143,6 +144,7 @@ function App() {
               <Route path="/" element={<DashboardScreen />} />
               <Route path="/diet" element={<DietScreen />} />
               <Route path="/workout" element={<WorkoutScreen />} />
+              <Route path="/coach" element={<CoachScreen />} />
               <Route path="/analytics" element={<AnalyticsScreen />} />
               <Route path="/deficit" element={<DeficitScreen />} />
               <Route path="/notes" element={<NotesScreen />} />
